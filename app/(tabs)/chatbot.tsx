@@ -1,30 +1,89 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, FlatList, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
-import { Colors } from '@/constants/GhibliTheme';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
+type Message = {
+  id: string;
+  text: string;
+  isBot: boolean;
+};
+
+type ApiMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
 
 export default function ChatbotScreen() {
-  const [messages, setMessages] = useState([
-    { id: '1', text: 'Hoo hoo ! 🦉 Je suis Hibou, ton assistant magique. Je peux t\'aider à réviser tes grimoires ou répondre à tes questions d\'étude. Que souhaites-tu explorer aujourd\'hui ?', isBot: true }
+  const [messages, setMessages] = useState<Message[]>([
+    { id: '1', text: "Hoo hoo ! 🦉 Je suis Hibou, ton assistant magique. Je peux t'aider à réviser tes grimoires ou répondre à tes questions d'étude. Que souhaites-tu explorer aujourd'hui ?", isBot: true }
   ]);
   const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const flatListRef = useRef<FlatList>(null);
 
-  const sendMessage = () => {
-    if (inputText.trim() === '') return;
-    
-    const newUserMsg = { id: Date.now().toString(), text: inputText, isBot: false };
-    setMessages(prev => [...prev, newUserMsg]);
+  const sendMessage = async () => {
+    if (inputText.trim() === '' || isLoading) return;
+
+    const userText = inputText.trim();
+    const newUserMsg: Message = { id: Date.now().toString(), text: userText, isBot: false };
+    const updatedMessages = [...messages, newUserMsg];
+
+    setMessages(updatedMessages);
     setInputText('');
-    
-    // Simulate bot response
-    setTimeout(() => {
-      const botMsg = { id: (Date.now() + 1).toString(), text: 'C\'est une excellente question. Laisse-moi chercher la réponse dans la bibliothèque des anciens...', isBot: true };
-      setMessages(prev => [...prev, botMsg]);
-    }, 1000);
+    setIsLoading(true);
+
+    try {
+      const apiMessages: ApiMessage[] = updatedMessages.slice(-20).map(m => ({
+        role: m.isBot ? 'assistant' : 'user',
+        content: m.text,
+      }));
+
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'http://localhost:8081',
+          'X-Title': 'Study Partner',
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'system',
+              content: "Tu es un assistant pédagogique pour étudiants. Réponds toujours en français."
+            },
+            ...apiMessages
+          ],
+        }),
+      });
+
+      if (!response.ok) throw new Error(`Erreur API: ${response.status}`);
+
+      const data = await response.json();
+      const botText = data.choices?.[0]?.message?.content || "Je n'ai pas pu répondre. Réessaie !";
+
+      setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), text: botText, isBot: true }]);
+    } catch {
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        text: 'Hoo... je rencontre des difficultés. Vérifie ta connexion et réessaie. 🦉',
+        isBot: true,
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  const displayMessages = isLoading
+    ? [...messages, { id: 'loading', text: '', isBot: true }]
+    : messages;
+
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
           <Text style={{ fontSize: 30 }}>🦉</Text>
@@ -36,16 +95,24 @@ export default function ChatbotScreen() {
       </View>
 
       <FlatList
-        data={messages}
+        ref={flatListRef}
+        data={displayMessages}
         keyExtractor={(item) => item.id}
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         renderItem={({ item }) => (
           <View style={[styles.messageBubble, item.isBot ? styles.botBubble : styles.userBubble]}>
-            <Text style={[styles.messageText, !item.isBot && styles.userMessageText]}>{item.text}</Text>
+            {item.id === 'loading' ? (
+              <ActivityIndicator size="small" color="#8BAF76" />
+            ) : (
+              <Text style={[styles.messageText, !item.isBot && styles.userMessageText]}>
+                {item.text}
+              </Text>
+            )}
           </View>
         )}
         contentContainerStyle={styles.messagesList}
       />
-      
+
       <View style={styles.inputWrapper}>
         <View style={styles.inputContainer}>
           <TextInput
@@ -56,7 +123,11 @@ export default function ChatbotScreen() {
             onChangeText={setInputText}
             multiline
           />
-          <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
+          <TouchableOpacity
+            style={[styles.sendButton, isLoading && { opacity: 0.5 }]}
+            onPress={sendMessage}
+            disabled={isLoading}
+          >
             <Ionicons name="sparkles" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
@@ -74,6 +145,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 20,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#F0E6D2',
@@ -108,6 +180,8 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 20,
     marginBottom: 16,
+    minHeight: 40,
+    justifyContent: 'center',
   },
   botBubble: {
     backgroundColor: '#fff',
@@ -170,5 +244,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 10,
-  }
+  },
 });

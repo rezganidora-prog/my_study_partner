@@ -72,6 +72,29 @@ export default function PomodoroScreen() {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const [isConcentrationMode, setIsConcentrationMode] = useState(false);
+
+  // ... previous logic remains the same ...
+
+  if (isConcentrationMode) {
+    return (
+      <View style={[styles.container, { backgroundColor: '#1A1A1A', paddingTop: 100 }]}>
+        <Text style={[styles.title, { color: '#8BAF76', marginBottom: 50 }]}>Mode Concentration Actif 🤫</Text>
+        <View style={[styles.timerCircleOuter, { borderColor: '#333' }]}>
+          <View style={[styles.timerCircleInner, { borderColor: modeConfig[mode].color, backgroundColor: '#222' }]}>
+            <Text style={[styles.timerText, { color: '#fff' }]}>{formatTime(timeLeft)}</Text>
+          </View>
+        </View>
+        <TouchableOpacity 
+          style={[styles.mainBtn, { backgroundColor: '#444', marginTop: 50, width: 200 }]} 
+          onPress={() => setIsConcentrationMode(false)}
+        >
+          <Text style={styles.mainBtnText}>Quitter le mode</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -91,9 +114,14 @@ export default function PomodoroScreen() {
 
         {/* Main Timer Card */}
         <View style={styles.timerCard}>
-          <TouchableOpacity style={styles.settingsIcon} onPress={() => setShowSettings(true)}>
-            <Ionicons name="settings-outline" size={24} color="#C4A882" />
-          </TouchableOpacity>
+          <View style={styles.settingsHeader}>
+            <TouchableOpacity onPress={() => setIsConcentrationMode(true)}>
+              <Ionicons name="eye-off-outline" size={24} color="#8BAF76" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowSettings(true)}>
+              <Ionicons name="settings-outline" size={24} color="#C4A882" />
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.timerCircleOuter}>
             <View style={[styles.timerCircleInner, { borderColor: modeConfig[mode].color }]}>

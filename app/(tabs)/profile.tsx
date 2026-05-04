@@ -1,211 +1,220 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Platform } from 'react-native';
-import { Colors } from '@/constants/GhibliTheme';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Platform, Image, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
-import type { User } from '@supabase/supabase-js';
 
 export default function ProfileScreen() {
-  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [goals, setGoals] = useState("Réussir mes examens de fin d'année et maîtriser le développement mobile.");
+  const [subjects, setSubjects] = useState("Développement Mobile, Mathématiques, IA, Philosophie");
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-    });
+    fetchProfile();
   }, []);
 
-  const userName = user?.email?.split('@')[0] || 'Explorateur';
+  const fetchProfile = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      if (data) {
+        setProfile({ ...data, email: user.email });
+        if (data.goals) setGoals(data.goals);
+        if (data.subjects) setSubjects(data.subjects);
+      } else {
+        setProfile({ email: user.email });
+      }
+    }
+  };
+
+  const pickAndUploadPhoto = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission requise', "Autorise l'accès à ta galerie pour choisir une photo.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    if (result.canceled) return;
+
+    setUploadingPhoto(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Non connecté');
+
+      const uri = result.assets[0].uri;
+      const fileName = `${user.id}/avatar.jpg`;
+
+      const photoResponse = await fetch(uri);
+      const blob = await photoResponse.blob();
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+
+      await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
+
+      setProfile((prev: any) => ({ ...prev, avatar_url: publicUrl }));
+    } catch (error: any) {
+      Alert.alert('Erreur', error.message || "Impossible de mettre à jour la photo.");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const saveProfile = async () => {
+    setSavingProfile(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Non connecté');
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ goals, subjects })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      setIsEditing(false);
+      Alert.alert('Succès ✨', 'Tes objectifs ont été sauvegardés !');
+    } catch (error: any) {
+      Alert.alert('Erreur', error.message || 'Impossible de sauvegarder.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const avatarUri = profile?.avatar_url
+    || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || 'User')}&background=8BAF76&color=fff`;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+      {/* Profile Header */}
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
-          <Text style={{ fontSize: 50 }}>🌸</Text>
-          <TouchableOpacity style={styles.editAvatar}>
-            <Ionicons name="camera" size={16} color="#fff" />
+          <Image source={{ uri: avatarUri }} style={styles.avatar} />
+          <TouchableOpacity style={styles.editBadge} onPress={pickAndUploadPhoto} disabled={uploadingPhoto}>
+            {uploadingPhoto
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="camera" size={16} color="#fff" />}
           </TouchableOpacity>
         </View>
-        <Text style={styles.userName}>{userName}</Text>
-        <Text style={styles.userEmail}>{user?.email}</Text>
-        <View style={styles.badgeContainer}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>🌱 Apprenti</Text>
-          </View>
-          <View style={[styles.badge, { backgroundColor: '#E3F2FD' }]}>
-            <Text style={[styles.badgeText, { color: '#1976D2' }]}>📚 Bibliophile</Text>
-          </View>
+        <Text style={styles.userName}>{profile?.full_name || 'Étudiant'}</Text>
+        <Text style={styles.userEmail}>{profile?.email || 'email@example.com'}</Text>
+      </View>
+
+      {/* Academic Info */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="school-outline" size={20} color="#8BAF76" />
+          <Text style={styles.sectionTitle}>Parcours Académique</Text>
+        </View>
+
+        <View style={styles.infoCard}>
+          <Text style={styles.label}>Matières étudiées</Text>
+          {isEditing ? (
+            <TextInput style={styles.input} value={subjects} onChangeText={setSubjects} multiline />
+          ) : (
+            <Text style={styles.value}>{subjects}</Text>
+          )}
+
+          <View style={styles.divider} />
+
+          <Text style={styles.label}>Objectifs d'apprentissage</Text>
+          {isEditing ? (
+            <TextInput style={styles.input} value={goals} onChangeText={setGoals} multiline />
+          ) : (
+            <Text style={styles.value}>{goals}</Text>
+          )}
         </View>
       </View>
 
+      {/* Progress Stats */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Ma Progression Magique</Text>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="stats-chart-outline" size={20} color="#8BAF76" />
+          <Text style={styles.sectionTitle}>Statistiques de Réussite</Text>
+        </View>
         <View style={styles.statsGrid}>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>12</Text>
-            <Text style={styles.statLabel}>Sessions</Text>
+          <View style={styles.statItem}>
+            <Text style={styles.statVal}>{profile?.streak || 0}</Text>
+            <Text style={styles.statLab}>Série (Jours)</Text>
           </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>5.5h</Text>
-            <Text style={styles.statLabel}>Temps Total</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>3</Text>
-            <Text style={styles.statLabel}>Badges</Text>
+          <View style={styles.statItem}>
+            <Text style={styles.statVal}>{profile?.study_hours || 0}h</Text>
+            <Text style={styles.statLab}>Heures d'étude</Text>
           </View>
         </View>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Paramètres</Text>
-        <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="notifications-outline" size={22} color="#4A3728" />
-          <Text style={styles.menuText}>Notifications</Text>
-          <Ionicons name="chevron-forward" size={20} color="#C4A882" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="color-palette-outline" size={22} color="#4A3728" />
-          <Text style={styles.menuText}>Thème de l'application</Text>
-          <Ionicons name="chevron-forward" size={20} color="#C4A882" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="shield-checkmark-outline" size={22} color="#4A3728" />
-          <Text style={styles.menuText}>Confidentialité</Text>
-          <Ionicons name="chevron-forward" size={20} color="#C4A882" />
-        </TouchableOpacity>
-      </View>
-
-      <TouchableOpacity style={styles.logoutButton} onPress={() => supabase.auth.signOut()}>
-        <Text style={styles.logoutText}>Se déconnecter</Text>
+      {/* Action Buttons */}
+      <TouchableOpacity
+        style={styles.mainBtn}
+        onPress={isEditing ? saveProfile : () => setIsEditing(true)}
+        disabled={savingProfile}
+      >
+        {savingProfile
+          ? <ActivityIndicator color="#fff" />
+          : <Text style={styles.mainBtnText}>{isEditing ? "Sauvegarder les objectifs" : "Modifier mes buts"}</Text>}
       </TouchableOpacity>
+
+      {isEditing && (
+        <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsEditing(false)}>
+          <Text style={styles.cancelBtnText}>Annuler</Text>
+        </TouchableOpacity>
+      )}
+
+      <TouchableOpacity style={styles.logoutBtn} onPress={() => supabase.auth.signOut()}>
+        <Text style={styles.logoutBtnText}>Se déconnecter</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.footerText}>Projet GLSI2C - Groupe 2 ✨</Text>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9F6F0',
-  },
-  scrollContent: {
-    padding: 24,
-    alignItems: 'center',
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  avatarContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#E8D9C0',
-    marginBottom: 20,
-    position: 'relative',
-  },
-  editAvatar: {
-    position: 'absolute',
-    bottom: 5,
-    right: 5,
-    backgroundColor: '#8BAF76',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  userName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#4A3728',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-  },
-  userEmail: {
-    fontSize: 14,
-    color: '#8B735B',
-    marginTop: 4,
-    marginBottom: 15,
-  },
-  badgeContainer: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  badge: {
-    backgroundColor: '#E8F5E9',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-  },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#2E7D32',
-  },
-  section: {
-    width: '100%',
-    maxWidth: 600,
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#F0E6D2',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4A3728',
-    marginBottom: 20,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  statBox: {
-    flex: 1,
-    backgroundColor: '#FDF6E3',
-    padding: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E8D9C0',
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4A3728',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#8B735B',
-    marginTop: 4,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#FDF6E3',
-  },
-  menuText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#4A3728',
-    marginLeft: 15,
-  },
-  logoutButton: {
-    marginTop: 20,
-    marginBottom: 40,
-  },
-  logoutText: {
-    color: '#D48C8C',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
+  container: { flex: 1, backgroundColor: '#F9F6F0' },
+  scrollContent: { padding: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 40 },
+  header: { alignItems: 'center', marginBottom: 30 },
+  avatarContainer: { position: 'relative', marginBottom: 15 },
+  avatar: { width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: '#fff' },
+  editBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#8BAF76', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
+  userName: { fontSize: 24, fontWeight: 'bold', color: '#4A3728' },
+  userEmail: { fontSize: 14, color: '#8B735B' },
+
+  section: { marginBottom: 25 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#4A3728' },
+  infoCard: { backgroundColor: '#fff', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#F0E6D2' },
+  label: { fontSize: 12, fontWeight: 'bold', color: '#8BAF76', textTransform: 'uppercase', marginBottom: 6 },
+  value: { fontSize: 15, color: '#4A3728', lineHeight: 22 },
+  input: { fontSize: 15, color: '#4A3728', borderBottomWidth: 1, borderBottomColor: '#8BAF76', paddingVertical: 5 },
+  divider: { height: 1, backgroundColor: '#F9F6F0', marginVertical: 15 },
+
+  statsGrid: { flexDirection: 'row', gap: 15 },
+  statItem: { flex: 1, backgroundColor: '#fff', borderRadius: 16, padding: 15, alignItems: 'center', borderWidth: 1, borderColor: '#F0E6D2' },
+  statVal: { fontSize: 22, fontWeight: 'bold', color: '#8BAF76' },
+  statLab: { fontSize: 12, color: '#8B735B' },
+
+  mainBtn: { backgroundColor: '#8BAF76', height: 55, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  mainBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  cancelBtn: { backgroundColor: '#fff', height: 48, borderRadius: 15, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E8D9C0', marginBottom: 12 },
+  cancelBtnText: { color: '#8B735B', fontSize: 15, fontWeight: '600' },
+  logoutBtn: { backgroundColor: '#FDF6E3', height: 55, borderRadius: 15, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#D48C8C' },
+  logoutBtnText: { color: '#D48C8C', fontSize: 16, fontWeight: 'bold' },
+  footerText: { textAlign: 'center', color: '#C4A882', fontSize: 12, marginTop: 20 },
 });
