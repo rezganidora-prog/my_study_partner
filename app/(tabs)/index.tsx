@@ -1,245 +1,177 @@
-import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Dimensions } from 'react-native';
-import { Colors } from '@/constants/GhibliTheme';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Dimensions, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
-import type { User } from '@supabase/supabase-js';
 
 const { width } = Dimensions.get('window');
-const isMobile = width < 768;
+const CARD_WIDTH = (width - 48) / 2;
 
 export default function Dashboard() {
-  const [user, setUser] = useState<User | null>(null);
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    streak: 0,
+    hours: 0,
+    courses: 0,
+    quizzes: 0
+  });
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-    });
+    fetchRealStats();
   }, []);
 
-  const userName = user?.email?.split('@')[0] || 'Explorateur';
+  const fetchRealStats = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Fetch Profile (Streak & Hours)
+      const { data: profile } = await supabase.from('profiles').select('streak, study_hours').eq('id', user.id).single();
+      
+      // Fetch Courses count
+      const { count: courseCount } = await supabase.from('courses').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
+      
+      // Fetch Tasks count (as a proxy for quizzes for now)
+      const { count: taskCount } = await supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
+
+      setStats({
+        streak: profile?.streak || 0,
+        hours: profile?.study_hours || 0,
+        courses: courseCount || 0,
+        quizzes: taskCount || 0
+      });
+    } catch (error) {
+      console.log('Error fetching stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const actions = [
+    { id: 'pomodoro', title: 'Focus', icon: 'timer-outline', color: '#FFD1D1', route: '/pomodoro' },
+    { id: 'courses', title: 'Grimoires', icon: 'book-outline', color: '#D1E8FF', route: '/courses' },
+    { id: 'quiz', title: 'Défis', icon: 'ribbon-outline', color: '#D1FFD1', route: '/quiz' },
+    { id: 'chatbot', title: 'Hibou IA', icon: 'help-circle-outline', color: '#FFF4D1', route: '/chatbot' },
+  ];
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color="#8BAF76" />
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      {/* Icône de feuille flottante discrète */}
-      <View style={styles.floatingLeaf}>
-        <Ionicons name="leaf-outline" size={120} color="rgba(139, 175, 118, 0.08)" />
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {/* Header Area */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>Bonjour ✨</Text>
+          <Text style={styles.subtitle}>{"Ton aventure magique continue..."}</Text>
+        </View>
+        <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/profile')}>
+          <Ionicons name="person-circle-outline" size={36} color="#8B735B" />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Salut, <Text style={styles.name}>{userName}</Text> ✨</Text>
-            <Text style={styles.subtitle}>Le voyage d'aujourd'hui commence ici 🌿</Text>
+      {/* Stats Row (4 blocks) */}
+      <View style={styles.statsRow}>
+        <View style={styles.statBox}>
+          <Text style={styles.statIcon}>🔥</Text>
+          <Text style={styles.statVal}>{stats.streak}</Text>
+          <Text style={styles.statLab}>Série</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statIcon}>⏱️</Text>
+          <Text style={styles.statVal}>{stats.hours}h</Text>
+          <Text style={styles.statLab}>Étude</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statIcon}>📚</Text>
+          <Text style={styles.statVal}>{stats.courses}</Text>
+          <Text style={styles.statLab}>Cours</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statIcon}>🏆</Text>
+          <Text style={styles.statVal}>{stats.quizzes}</Text>
+          <Text style={styles.statLab}>Défis</Text>
+        </View>
+      </View>
+
+      {/* Main Actions Grid (2x2) */}
+      <Text style={styles.sectionTitle}>Que souhaites-tu accomplir ?</Text>
+      <View style={styles.grid}>
+        {actions.map((action) => (
+          <TouchableOpacity 
+            key={action.id} 
+            style={[styles.actionCard, { backgroundColor: action.color }]}
+            onPress={() => router.push(action.route as any)}
+          >
+            <View style={styles.iconCircle}>
+              <Ionicons name={action.icon as any} size={24} color="#4A3728" />
+            </View>
+            <Text style={styles.actionTitle}>{action.title}</Text>
+            <Ionicons name="arrow-forward-circle" size={20} color="#4A372840" style={styles.arrow} />
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Timeline Quick View */}
+      <TouchableOpacity style={styles.timelineCard} onPress={() => router.push('/timeline')}>
+        <View style={styles.timelineInfo}>
+          <Ionicons name="calendar-outline" size={24} color="#8BAF76" />
+          <View style={{ marginLeft: 12 }}>
+            <Text style={styles.timelineTitle}>Ma Timeline</Text>
+            <Text style={styles.timelineSub}>Vérifie ton programme du jour</Text>
           </View>
         </View>
+        <Ionicons name="chevron-forward" size={20} color="#C4A882" />
+      </TouchableOpacity>
 
-        <View style={styles.statsGrid}>
-          <View style={[styles.statCard, { backgroundColor: '#E8F5E9' }]}>
-            <View style={styles.statIconHeader}>
-              <Ionicons name="pizza-outline" size={24} color="#4CAF50" />
-              <Text style={styles.statValue}>0</Text>
-            </View>
-            <Text style={styles.statLabel}>Pomodoro</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: '#E3F2FD' }]}>
-            <View style={styles.statIconHeader}>
-              <Ionicons name="alarm-outline" size={24} color="#2196F3" />
-              <Text style={styles.statValue}>0h</Text>
-            </View>
-            <Text style={styles.statLabel}>Heures</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: '#FFF3E0' }]}>
-            <View style={styles.statIconHeader}>
-              <Ionicons name="flame-outline" size={24} color="#FF9800" />
-              <Text style={styles.statValue}>0</Text>
-            </View>
-            <Text style={styles.statLabel}>Série</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: '#F3E5F5' }]}>
-            <View style={styles.statIconHeader}>
-              <Ionicons name="school-outline" size={24} color="#9C27B0" />
-              <Text style={styles.statValue}>0</Text>
-            </View>
-            <Text style={styles.statLabel}>Questions</Text>
-          </View>
+      {/* Conseil du Jour at the Bottom (as a Reminder) */}
+      <View style={styles.tipCard}>
+        <View style={styles.tipHeader}>
+          <Ionicons name="bulb-outline" size={20} color="#8BAF76" />
+          <Text style={styles.tipTitle}>Rappel du jour</Text>
         </View>
-
-        <View style={styles.actionsSection}>
-          <Text style={styles.sectionTitle}>✨ Actions rapides</Text>
-          <View style={styles.actionsContainer}>
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionIcon, { backgroundColor: '#FFF0F0' }]}>
-                <Ionicons name="pizza-outline" size={24} color="#FF5252" />
-              </View>
-              <Text style={styles.actionTitle}>Focus</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionIcon, { backgroundColor: '#F0F4FF' }]}>
-                <Ionicons name="calendar-outline" size={24} color="#5C7CFA" />
-              </View>
-              <Text style={styles.actionTitle}>Timeline</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionIcon, { backgroundColor: '#FFF9DB' }]}>
-                <Ionicons name="headset-outline" size={24} color="#FAB005" />
-              </View>
-              <Text style={styles.actionTitle}>Hibou</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.tipCard}>
-          <View style={styles.tipHeader}>
-            <Text style={{ fontSize: 24 }}>🌸</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.tipTitle}>Conseil du jour</Text>
-              <Text style={styles.tipText}>
-                25 min de focus + 5 min de pause. Ton cerveau a besoin de cycles pour fleurir 🌿
-              </Text>
-            </View>
-          </View>
-        </View>
-      </ScrollView>
-    </View>
+        <Text style={styles.tipText}>
+          {"\"Le voyage le plus long commence toujours par un petit pas. Fais une pause de 5 min toutes les 25 min d'étude.\" 🌿"}
+        </Text>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9F6F0',
-  },
-  floatingLeaf: {
-    position: 'absolute',
-    top: -20,
-    right: -20,
-    zIndex: 0,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingTop: Platform.OS === 'ios' ? 80 : 70,
-  },
-  header: {
-    marginBottom: 24,
-    zIndex: 1,
-  },
-  greeting: {
-    fontSize: 26,
-    color: '#4A3728',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-  },
-  name: {
-    fontWeight: 'bold',
-    color: '#8BAF76',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#8B735B',
-    marginTop: 4,
-    opacity: 0.8,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 12,
-    marginBottom: 30,
-  },
-  statCard: {
-    width: '48%',
-    padding: 16,
-    borderRadius: 20,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  statIconHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4A3728',
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#8B735B',
-    marginTop: 6,
-    fontWeight: 'bold',
-  },
-  actionsSection: {
-    marginBottom: 30,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4A3728',
-    marginBottom: 16,
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  actionCard: {
-    backgroundColor: '#fff',
-    flex: 1,
-    padding: 16,
-    borderRadius: 18,
-    alignItems: 'center',
-    gap: 10,
-    borderWidth: 1,
-    borderColor: '#F0E6D2',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  actionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  actionTitle: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#4A3728',
-  },
-  tipCard: {
-    backgroundColor: '#F0FBFF',
-    padding: 20,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E1F5FE',
-  },
-  tipHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 15,
-  },
-  tipTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#2E7D32',
-    marginBottom: 4,
-  },
-  tipText: {
-    fontSize: 13,
-    color: '#4A3728',
-    lineHeight: 20,
-    opacity: 0.8,
-  },
+  container: { flex: 1, backgroundColor: '#F9F6F0' },
+  scrollContent: { padding: 16, paddingTop: Platform.OS === 'ios' ? 60 : 40 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
+  greeting: { fontSize: 28, fontWeight: 'bold', color: '#4A3728', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
+  subtitle: { fontSize: 14, color: '#8BAF76', fontWeight: '600' },
+  profileBtn: { padding: 4 },
+
+  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 30 },
+  statBox: { flex: 1, backgroundColor: '#fff', borderRadius: 16, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: '#F0E6D2' },
+  statIcon: { fontSize: 18, marginBottom: 4 },
+  statVal: { fontSize: 16, fontWeight: 'bold', color: '#4A3728' },
+  statLab: { fontSize: 10, color: '#8B735B', textTransform: 'uppercase' },
+
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#4A3728', marginBottom: 15, marginLeft: 4 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
+  actionCard: { width: CARD_WIDTH, height: 120, borderRadius: 24, padding: 16, justifyContent: 'space-between', borderWidth: 1, borderColor: '#00000008' },
+  iconCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#ffffff90', justifyContent: 'center', alignItems: 'center' },
+  actionTitle: { fontSize: 16, fontWeight: 'bold', color: '#4A3728' },
+  arrow: { position: 'absolute', bottom: 16, right: 16 },
+
+  timelineCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', padding: 16, borderRadius: 20, borderWidth: 1, borderColor: '#F0E6D2', marginBottom: 30 },
+  timelineInfo: { flexDirection: 'row', alignItems: 'center' },
+  timelineTitle: { fontSize: 16, fontWeight: 'bold', color: '#4A3728' },
+  timelineSub: { fontSize: 12, color: '#8B735B' },
+
+  tipCard: { backgroundColor: '#FDF6E3', borderRadius: 20, padding: 16, borderWidth: 1, borderColor: '#E8D9C0', borderStyle: 'dashed' },
+  tipHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  tipTitle: { fontSize: 14, fontWeight: 'bold', color: '#8BAF76' },
+  tipText: { fontSize: 12, color: '#8B735B', fontStyle: 'italic', lineHeight: 18 },
 });

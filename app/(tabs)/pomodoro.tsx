@@ -1,94 +1,188 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
-import { Colors } from '@/constants/GhibliTheme';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, Dimensions, ScrollView, Modal, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+const { width } = Dimensions.get('window');
+
+type TimerMode = 'focus' | 'short' | 'long';
+
 export default function PomodoroScreen() {
-  const [minutes, setMinutes] = useState(25);
-  const [seconds, setSeconds] = useState(0);
+  const [mode, setMode] = useState<TimerMode>('focus');
   const [isActive, setIsActive] = useState(false);
+  const [sessionsDone, setSessionsDone] = useState(0);
+  const [showSettings, setShowSettings] = useState(false);
+  
+  // Custom Times (in minutes)
+  const [customTimes, setCustomTimes] = useState({
+    focus: 25,
+    short: 5,
+    long: 15
+  });
+
+  const [timeLeft, setTimeLeft] = useState(customTimes.focus * 60);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const modeConfig = {
+    focus: { color: '#FF5252', icon: 'pizza-outline', label: 'Focus' },
+    short: { color: '#4FC3F7', icon: 'water-outline', label: 'Pause' },
+    long: { color: '#F06292', icon: 'flower-outline', label: 'Longue' },
+  };
 
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    if (isActive) {
-      interval = setInterval(() => {
-        if (seconds > 0) {
-          setSeconds(seconds - 1);
-        }
-        if (seconds === 0) {
-          if (minutes === 0) {
-            clearInterval(interval!);
-            setIsActive(false);
-          } else {
-            setMinutes(minutes - 1);
-            setSeconds(59);
-          }
-        }
-      }, 1000);
+    if (isActive && timeLeft > 0) {
+      timerRef.current = setInterval(() => setTimeLeft(t => t - 1), 1000);
+    } else if (timeLeft === 0) {
+      handleComplete();
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
     }
-    return () => { if (interval) clearInterval(interval); };
-  }, [isActive, seconds, minutes]);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [isActive, timeLeft]);
+
+  const handleComplete = () => {
+    setIsActive(false);
+    if (mode === 'focus') {
+      const nextSessions = (sessionsDone + 1) % 4;
+      setSessionsDone(nextSessions);
+      if (nextSessions === 0) {
+        switchMode('long');
+      } else {
+        switchMode('short');
+      }
+    } else {
+      switchMode('focus');
+    }
+  };
+
+  const switchMode = (newMode: TimerMode) => {
+    setIsActive(false);
+    setMode(newMode);
+    setTimeLeft(customTimes[newMode] * 60);
+  };
+
+  const updateTime = (m: TimerMode, val: string) => {
+    const num = parseInt(val) || 1;
+    setCustomTimes(prev => ({ ...prev, [m]: num }));
+    if (mode === m) setTimeLeft(num * 60);
+  };
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <View style={[styles.tab, styles.activeTab]}>
-          <Text style={styles.activeTabText}>🍅 Temps de focus</Text>
-        </View>
-        <View style={styles.tab}>
-          <Text style={styles.tabText}>☕ Petite pause</Text>
-        </View>
-        <View style={styles.tab}>
-          <Text style={styles.tabText}>🌸 Grande pause</Text>
-        </View>
-      </View>
-
-      <View style={styles.timerContainer}>
-        <View style={styles.outerCircle}>
-          <View style={styles.innerCircle}>
-            <Text style={{ fontSize: 40, marginBottom: 10 }}>🍅</Text>
-            <Text style={styles.timerText}>
-              {minutes < 10 ? `0${minutes}` : minutes}:{seconds < 10 ? `0${seconds}` : seconds}
-            </Text>
-            <Text style={styles.statusLabel}>Temps de focus</Text>
-          </View>
-        </View>
-
-        <View style={styles.controls}>
-          <TouchableOpacity style={styles.iconButton} onPress={() => { setMinutes(25); setSeconds(0); setIsActive(false); }}>
-            <Ionicons name="refresh-outline" size={28} color="#8B735B" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.playButton} 
-            onPress={() => setIsActive(!isActive)}
-          >
-            <Ionicons name={isActive ? "pause" : "play"} size={32} color="#fff" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconButton}>
-            <Ionicons name="arrow-forward-outline" size={28} color="#8B735B" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.progressCard}>
-        <View style={styles.progressHeader}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={{ fontSize: 20 }}>🌱</Text>
-            <Text style={styles.progressTitle}>Sessions complétées</Text>
-          </View>
-          <Text style={styles.progressCount}>0</Text>
-        </View>
-        
-        <View style={styles.dotsRow}>
-          {[1, 2, 3, 4].map((i) => (
-            <View key={i} style={styles.dot} />
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Top Tabs */}
+        <View style={styles.tabsContainer}>
+          {(['focus', 'short', 'long'] as TimerMode[]).map(m => (
+            <TouchableOpacity 
+              key={m} 
+              style={[styles.tab, mode === m && { backgroundColor: modeConfig[m].color + '15', borderColor: modeConfig[m].color }]}
+              onPress={() => switchMode(m)}
+            >
+              <Ionicons name={modeConfig[m].icon as any} size={20} color={modeConfig[m].color} />
+              <Text style={[styles.tabText, { color: mode === m ? modeConfig[m].color : '#8B735B' }]}>{modeConfig[m].label}</Text>
+            </TouchableOpacity>
           ))}
         </View>
-        
-        <Text style={styles.progressHint}>🍃 4 session(s) avant la grande pause</Text>
-      </View>
+
+        {/* Main Timer Card */}
+        <View style={styles.timerCard}>
+          <TouchableOpacity style={styles.settingsIcon} onPress={() => setShowSettings(true)}>
+            <Ionicons name="settings-outline" size={24} color="#C4A882" />
+          </TouchableOpacity>
+
+          <View style={styles.timerCircleOuter}>
+            <View style={[styles.timerCircleInner, { borderColor: modeConfig[mode].color }]}>
+              <Ionicons name={modeConfig[mode].icon as any} size={36} color={modeConfig[mode].color} />
+              <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
+              <Text style={styles.modeLabel}>{modeConfig[mode].label}</Text>
+            </View>
+          </View>
+
+          <View style={styles.controlsRow}>
+            <TouchableOpacity style={styles.smallControl} onPress={() => setTimeLeft(customTimes[mode] * 60)}>
+              <Ionicons name="refresh" size={24} color="#8B735B" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.mainControl} onPress={() => setIsActive(!isActive)}>
+              <Ionicons name={isActive ? "pause" : "play"} size={32} color="#fff" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.smallControl} onPress={handleComplete}>
+              <Ionicons name="play-skip-forward" size={24} color="#8B735B" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Sessions Stats Card */}
+        <View style={styles.statsCard}>
+          <View style={styles.statsHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="leaf-outline" size={20} color="#8BAF76" />
+              <Text style={styles.statsTitle}>Sessions complétées</Text>
+            </View>
+            <Text style={styles.statsCount}>{sessionsDone}/4</Text>
+          </View>
+          
+          <View style={styles.progressBars}>
+            {[0, 1, 2, 3].map(i => (
+              <View key={i} style={[styles.barBase, i < sessionsDone && styles.barFilled]} />
+            ))}
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* SETTINGS MODAL */}
+      <Modal visible={showSettings} animationType="fade" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Réglages du temps ✨</Text>
+              <TouchableOpacity onPress={() => setShowSettings(false)}>
+                <Ionicons name="close" size={24} color="#4A3728" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Focus (min)</Text>
+              <TextInput 
+                style={styles.settingInput} 
+                keyboardType="numeric" 
+                value={customTimes.focus.toString()}
+                onChangeText={(v) => updateTime('focus', v)}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Petite Pause (min)</Text>
+              <TextInput 
+                style={styles.settingInput} 
+                keyboardType="numeric" 
+                value={customTimes.short.toString()}
+                onChangeText={(v) => updateTime('short', v)}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Grande Pause (min)</Text>
+              <TextInput 
+                style={styles.settingInput} 
+                keyboardType="numeric" 
+                value={customTimes.long.toString()}
+                onChangeText={(v) => updateTime('long', v)}
+              />
+            </View>
+
+            <TouchableOpacity style={styles.saveButton} onPress={() => setShowSettings(false)}>
+              <Text style={styles.saveButtonText}>Enregistrer</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -97,145 +191,203 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9F6F0',
-    alignItems: 'center',
-    paddingTop: 40,
-    paddingHorizontal: 20,
   },
-  header: {
+  scrollContent: {
+    padding: 20,
+    alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+  },
+  tabsContainer: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 50,
+    marginBottom: 30,
+    width: '100%',
+    justifyContent: 'center',
   },
   tab: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#fff',
-    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    borderWidth: 1.5,
     borderColor: '#F0E6D2',
-  },
-  activeTab: {
-    backgroundColor: '#E8F5E9',
-    borderColor: '#8BAF76',
+    gap: 8,
   },
   tabText: {
-    color: '#8B735B',
-    fontWeight: '600',
-  },
-  activeTabText: {
-    color: '#2E7D32',
+    fontSize: 14,
     fontWeight: 'bold',
   },
-  timerContainer: {
-    alignItems: 'center',
+  timerCard: {
     backgroundColor: '#fff',
-    padding: 40,
-    borderRadius: 40,
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 30,
+    padding: 25,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#F0E6D2',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.05,
-    shadowRadius: 20,
-    elevation: 5,
-    marginBottom: 40,
+    marginBottom: 20,
+    position: 'relative',
   },
-  outerCircle: {
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    borderWidth: 8,
-    borderColor: '#F2E8D5',
+  settingsIcon: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+  },
+  timerCircleOuter: {
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: '#F0E6D2',
+    padding: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: 25,
   },
-  innerCircle: {
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: '#fff',
+  timerCircleInner: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 90,
+    borderWidth: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   timerText: {
-    fontSize: 64,
+    fontSize: 42,
     fontWeight: 'bold',
     color: '#4A3728',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    marginVertical: 4,
   },
-  statusLabel: {
-    fontSize: 16,
-    color: '#C4A882',
-    marginTop: 5,
+  modeLabel: {
+    fontSize: 12,
+    color: '#8B735B',
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
-  controls: {
+  controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 30,
+    gap: 25,
   },
-  iconButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#F0E6D2',
-  },
-  playButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+  mainControl: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#8BAF76',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#8BAF76',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 8,
   },
-  progressCard: {
-    backgroundColor: '#fff',
-    width: '100%',
-    maxWidth: 450,
-    padding: 24,
-    borderRadius: 24,
+  smallControl: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F9F6F0',
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#F0E6D2',
   },
-  progressHeader: {
+  statsCard: {
+    backgroundColor: '#fff',
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#F0E6D2',
+    marginBottom: 20,
+  },
+  statsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 15,
   },
-  progressTitle: {
-    fontSize: 16,
+  statsTitle: {
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#4A3728',
   },
-  progressCount: {
-    fontSize: 24,
+  statsCount: {
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#8BAF76',
   },
-  dotsRow: {
+  progressBars: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 15,
+    gap: 8,
   },
-  dot: {
+  barBase: {
     flex: 1,
     height: 8,
     backgroundColor: '#F2E8D5',
     borderRadius: 4,
   },
-  progressHint: {
-    fontSize: 13,
-    color: '#8BAF76',
+  barFilled: {
+    backgroundColor: '#8BAF76',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    width: '85%',
+    borderRadius: 25,
+    padding: 25,
+    borderWidth: 1,
+    borderColor: '#F0E6D2',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 25,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#4A3728',
+  },
+  settingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  settingLabel: {
+    fontSize: 16,
+    color: '#8B735B',
     fontWeight: '600',
+  },
+  settingInput: {
+    backgroundColor: '#F9F6F0',
+    width: 70,
+    height: 45,
+    borderRadius: 12,
+    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#4A3728',
+    borderWidth: 1,
+    borderColor: '#F0E6D2',
+  },
+  saveButton: {
+    backgroundColor: '#8BAF76',
+    height: 50,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
