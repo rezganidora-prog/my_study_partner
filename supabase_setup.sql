@@ -45,7 +45,30 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 2. Table des messages (chat en temps réel)
+-- 2. Table des cours (Bibliothèque)
+CREATE TABLE IF NOT EXISTS public.courses (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    title text NOT NULL,
+    subject text,
+    file_url text,
+    is_external boolean DEFAULT false,
+    external_link text
+);
+
+ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can see their own courses" ON public.courses
+FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own courses" ON public.courses
+FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own courses" ON public.courses
+FOR DELETE USING (auth.uid() = user_id);
+
+-- 3. Table des messages (chat en temps réel)
 CREATE TABLE IF NOT EXISTS public.messages (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -67,15 +90,10 @@ DROP POLICY IF EXISTS "Utilisateurs authentifiés peuvent envoyer des messages" 
 CREATE POLICY "Utilisateurs authentifiés peuvent envoyer des messages"
 ON public.messages FOR INSERT WITH CHECK (auth.uid() = user_id);
 
--- 3. Activer le Realtime sur messages
+-- 4. Activer le Realtime sur messages
 ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
 
--- 4. Storage : bucket "chat-media" (à créer dans Dashboard > Storage)
--- Policies à ajouter via le Dashboard Supabase :
---   SELECT : true (lecture publique)
---   INSERT : bucket_id = 'chat-media' AND auth.role() = 'authenticated'
---
--- Ou via SQL (si bucket déjà créé) :
+-- 5. Storage : bucket "chat-media"
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('chat-media', 'chat-media', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
@@ -86,7 +104,18 @@ FOR SELECT USING (bucket_id = 'chat-media');
 CREATE POLICY "Authenticated users can upload chat media" ON storage.objects
 FOR INSERT WITH CHECK (bucket_id = 'chat-media' AND auth.role() = 'authenticated');
 
--- 5. Storage : bucket "avatars"
+-- 6. Storage : bucket "study-docs"
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('study-docs', 'study-docs', false)
+ON CONFLICT (id) DO UPDATE SET public = false;
+
+CREATE POLICY "Users can only see their own documents" ON storage.objects
+FOR SELECT USING (bucket_id = 'study-docs' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+CREATE POLICY "Users can upload their own documents" ON storage.objects
+FOR INSERT WITH CHECK (bucket_id = 'study-docs' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+-- 7. Storage : bucket "avatars"
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('avatars', 'avatars', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
@@ -96,6 +125,3 @@ FOR SELECT USING (bucket_id = 'avatars');
 
 CREATE POLICY "Users can upload own avatar" ON storage.objects
 FOR INSERT WITH CHECK (bucket_id = 'avatars' AND auth.role() = 'authenticated');
-
-CREATE POLICY "Users can update own avatar" ON storage.objects
-FOR UPDATE USING (bucket_id = 'avatars' AND auth.role() = 'authenticated');

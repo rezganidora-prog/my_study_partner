@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '@/constants/GhibliTheme';
+import { Colors, Shadows, Spacing } from '@/constants/GhibliTheme';
 import { supabase } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 
@@ -10,6 +10,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
+  const [stats, setStats] = useState({ level: 5, xp: 1250, nextLevelXp: 2000 });
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -17,17 +18,16 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     });
   }, []);
 
-  const userName = user?.email?.split('@')[0] || 'Explorateur';
+  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Explorateur';
 
   const MENU_ITEMS = [
-    { name: 'Accueil', icon: 'home-outline', path: '/(tabs)' },
-    { name: 'Pomodoro', icon: 'pizza-outline', path: '/(tabs)/pomodoro' },
-    { name: 'Timeline', icon: 'calendar-outline', path: '/(tabs)/timeline' },
-    { name: 'Study With Others', icon: 'people-outline', path: '/(tabs)/social' },
-    { name: 'Mes Cours', icon: 'book-outline', path: '/(tabs)/courses' },
-    { name: 'Quiz', icon: 'bulb-outline', path: '/(tabs)/quiz' },
-    { name: 'Mode Focus', icon: 'eye-off-outline', path: '/(tabs)/focus' },
-    { name: 'Chatbot IA', icon: 'headset-outline', path: '/(tabs)/chatbot' },
+    { name: 'Dashboard', icon: 'grid-outline', path: '/(tabs)' },
+    { name: 'Focus Pomodoro', icon: 'timer-outline', path: '/(tabs)/pomodoro' },
+    { name: 'Bibliothèque', icon: 'book-outline', path: '/(tabs)/courses' },
+    { name: 'Planning', icon: 'calendar-outline', path: '/(tabs)/timeline' },
+    { name: 'Assistant IA', icon: 'sparkles-outline', path: '/(tabs)/chatbot' },
+    { name: 'Défis & Quiz', icon: 'trophy-outline', path: '/(tabs)/quiz' },
+    { name: 'Communauté', icon: 'people-outline', path: '/(tabs)/social' },
   ];
 
   const handleNavigate = (path: string) => {
@@ -35,25 +35,35 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     if (onClose) onClose();
   };
 
+  const xpPercentage = (stats.xp / stats.nextLevelXp) * 100;
+
   return (
     <View style={styles.container}>
-      {/* Header avec Profil plus visible */}
-      <View style={styles.profileSection}>
-        <View style={styles.avatarCircle}>
-          <Text style={{ fontSize: 28 }}>🌸</Text>
+      {/* User Profile Card */}
+      <View style={styles.profileCard}>
+        <View style={styles.profileHeader}>
+          <View style={styles.avatarWrapper}>
+            <Text style={{ fontSize: 24 }}>🍃</Text>
+          </View>
+          <View style={styles.nameContainer}>
+            <Text style={styles.userName} numberOfLines={1}>{userName}</Text>
+            <Text style={styles.userRank}>Apprenti Savant</Text>
+          </View>
         </View>
-        <View style={styles.profileInfo}>
-          <Text style={styles.userName} numberOfLines={1}>{userName}</Text>
-          <Text style={styles.userStatus}>Apprenti Sorcier ✨</Text>
+
+        <View style={styles.xpSection}>
+          <View style={styles.xpLabelRow}>
+            <Text style={styles.xpLabel}>Niveau {stats.level}</Text>
+            <Text style={styles.xpValue}>{stats.xp} / {stats.nextLevelXp} XP</Text>
+          </View>
+          <View style={styles.xpBarBg}>
+            <View style={[styles.xpBarFill, { width: `${xpPercentage}%` }]} />
+          </View>
         </View>
-        {onClose && (
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={28} color="#8B735B" />
-          </TouchableOpacity>
-        )}
       </View>
 
       <ScrollView style={styles.menuSection} showsVerticalScrollIndicator={false}>
+        <Text style={styles.sectionLabel}>Navigation</Text>
         {MENU_ITEMS.map((item) => {
           const isActive = pathname === item.path || (item.path === '/(tabs)' && pathname === '/');
           return (
@@ -62,31 +72,36 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
               style={[styles.menuItem, isActive && styles.activeMenuItem]}
               onPress={() => handleNavigate(item.path)}
             >
-              <Ionicons 
-                name={item.icon as any} 
-                size={24} 
-                color={isActive ? '#fff' : '#8B735B'} 
-              />
+              <View style={[styles.iconBox, isActive && styles.activeIconBox]}>
+                <Ionicons
+                  name={item.icon as any}
+                  size={20}
+                  color={isActive ? Colors.white : Colors.tan}
+                />
+              </View>
               <Text style={[styles.menuText, isActive && styles.activeMenuText]}>
                 {item.name}
               </Text>
             </TouchableOpacity>
           );
         })}
-
-        <TouchableOpacity 
-          style={[styles.menuItem, pathname === '/(tabs)/profile' && styles.activeMenuItem]}
-          onPress={() => handleNavigate('/(tabs)/profile')}
-        >
-          <Ionicons name="person-outline" size={24} color={pathname === '/(tabs)/profile' ? '#fff' : '#8B735B'} />
-          <Text style={[styles.menuText, pathname === '/(tabs)/profile' && styles.activeMenuText]}>Profil</Text>
-        </TouchableOpacity>
       </ScrollView>
 
-      <TouchableOpacity style={styles.logoutButton} onPress={() => supabase.auth.signOut()}>
-        <Ionicons name="log-out-outline" size={24} color="#D48C8C" />
-        <Text style={styles.logoutText}>Déconnexion</Text>
-      </TouchableOpacity>
+      {/* Footer Actions */}
+      <View style={styles.footer}>
+        <TouchableOpacity
+          style={styles.footerItem}
+          onPress={() => handleNavigate('/(tabs)/profile')}
+        >
+          <Ionicons name="settings-outline" size={20} color={Colors.tan} />
+          <Text style={styles.footerText}>Paramètres</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.logoutBtn} onPress={() => supabase.auth.signOut()}>
+          <Ionicons name="log-out-outline" size={20} color={Colors.accent} />
+          <Text style={styles.logoutText}>Déconnexion</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -94,92 +109,146 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FDF6E3',
-    paddingVertical: 25,
-    paddingHorizontal: 18,
-    borderRightWidth: 1,
-    borderRightColor: '#F0E6D2',
+    backgroundColor: Colors.beige,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
   },
-  profileSection: {
+  profileCard: {
+    marginHorizontal: 16,
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 25,
+    ...Shadows.small,
+  },
+  profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 5,
-    marginBottom: 35,
-    marginTop: Platform.OS === 'ios' ? 40 : 10,
-    gap: 15,
+    marginBottom: 15,
   },
-  avatarCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#fff',
+  avatarWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.greenSoft,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E8D9C0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
+    borderWidth: 1,
+    borderColor: Colors.greenLight,
   },
-  profileInfo: {
+  nameContainer: {
+    marginLeft: 12,
     flex: 1,
   },
   userName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#4A3728',
+    color: Colors.brown,
   },
-  userStatus: {
+  userRank: {
     fontSize: 12,
-    color: '#8BAF76',
-    fontWeight: 'bold',
-    marginTop: 2,
+    color: Colors.green,
+    fontWeight: '600',
   },
-  closeButton: {
-    padding: 5,
+  xpSection: {
+    marginTop: 5,
+  },
+  xpLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  xpLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: Colors.brownLight,
+  },
+  xpValue: {
+    fontSize: 10,
+    color: Colors.tan,
+  },
+  xpBarBg: {
+    height: 6,
+    backgroundColor: Colors.beige,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  xpBarFill: {
+    height: '100%',
+    backgroundColor: Colors.green,
+    borderRadius: 3,
   },
   menuSection: {
     flex: 1,
+    paddingHorizontal: 16,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.tan,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 10,
+    marginLeft: 8,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 15,
-    paddingVertical: 14,
-    paddingHorizontal: 15,
-    borderRadius: 14,
-    marginBottom: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    marginBottom: 4,
   },
   activeMenuItem: {
-    backgroundColor: '#8BAF76',
-    shadowColor: '#8BAF76',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 3,
+    backgroundColor: 'rgba(139, 175, 118, 0.1)',
+  },
+  iconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Shadows.small,
+  },
+  activeIconBox: {
+    backgroundColor: Colors.green,
   },
   menuText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#8B735B',
+    color: Colors.brownLight,
+    marginLeft: 12,
   },
   activeMenuText: {
-    color: '#fff',
+    color: Colors.green,
+    fontWeight: '700',
   },
-  logoutButton: {
+  footer: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  footerItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 15,
-    paddingVertical: 18,
-    paddingHorizontal: 15,
-    marginTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F0E6D2',
+    paddingVertical: 12,
+    marginBottom: 5,
+  },
+  footerText: {
+    fontSize: 14,
+    color: Colors.brownLight,
+    fontWeight: '600',
+    marginLeft: 12,
+  },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
   },
   logoutText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#D48C8C',
+    fontSize: 14,
+    color: Colors.accent,
+    fontWeight: '700',
+    marginLeft: 12,
   },
 });

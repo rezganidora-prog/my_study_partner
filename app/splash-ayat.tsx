@@ -21,7 +21,7 @@ const AYAT: Ayat[] = [
   { arabic: 'إِنَّ اللَّهَ لَا يُضَيِّعُ أَجْرَ الْمُحْسِنِينَ', surah: 'سورة التوبة • آية ١٢٠', translation: 'Allah ne laisse pas perdre la récompense des bienfaisants' },
   { arabic: 'وَاللَّهُ يُحِبُّ الصَّابِرِينَ', surah: 'سورة آل عمران • آية ١٤٦', translation: 'Allah aime ceux qui sont patients' },
   { arabic: 'إِنَّ مَعَ الْعُسْرِ يُسْرًا', surah: 'سورة الشرح • آية ٦', translation: 'Oui, avec la difficulté vient la facilité' },
-  { arabic: 'وَعَسَىٰ أَن تَكْرَهُوا شَيْئًا وَهُوَ خَيْرٌ لَّكُمْ', surah: 'سورة البقرة • آية ٢١٦', translation: 'Il se peut que vous détestiez une chose qui est bonne pour vous' },
+  { arabic: 'وَعَسَىٰ أَن تَكْرَهُوا شَيْئًا وَهو خَيْرٌ لَّكُمْ', surah: 'سورة البقرة • آية ٢١٦', translation: 'Il se peut que vous détestiez une chose qui est bonne pour vous' },
   { arabic: 'اللَّهُ نُورُ السَّمَاوَاتِ وَالْأَرْضِ', surah: 'سورة النور • آية ٣٥', translation: 'Allah est la lumière des cieux et de la terre' },
   { arabic: 'وَهُوَ مَعَكُمْ أَيْنَ مَا كُنتُمْ', surah: 'سورة الحديد • آية ٤', translation: 'Il est avec vous où que vous soyez' },
   { arabic: 'رَبَّنَا آتِنَا فِي الدُّنْيَا حَسَنَةً', surah: 'سورة البقرة • آية ٢٠١', translation: 'Seigneur, accorde-nous le bien ici-bas' },
@@ -128,7 +128,6 @@ export default function SplashAyat() {
 
           {/* ── Haut décoratif ── */}
           <View style={styles.topSection}>
-            <Text style={styles.crescent}>🌙</Text>
             <View style={styles.starsRow}>
               {['✦', '✦', '✦', '✦', '✦'].map((s, i) => (
                 <Text key={i} style={[styles.star, i === 2 && styles.starCenter]}>{s}</Text>
@@ -144,24 +143,17 @@ export default function SplashAyat() {
 
           {/* ── Carte Ayat ── */}
           <View style={styles.ayatCard}>
-            {/* Guillemets arabes */}
-            <Text style={styles.quoteArabic}>﴾</Text>
-
-            {/* Texte arabe */}
-            <Text style={styles.arabicText}>{ayat.arabic}</Text>
-
-            <Text style={styles.quoteArabic} >﴿</Text>
+            {/* Texte arabe avec guillemets */}
+            <View style={styles.arabicContainer}>
+              <Text style={styles.quoteArabic}>﴾</Text>
+              <Text style={styles.arabicText}>{ayat.arabic}</Text>
+              <Text style={styles.quoteArabic}>﴿</Text>
+            </View>
 
             {/* Badge Sourate */}
             <View style={styles.surahBadge}>
               <Text style={styles.surahText}>{ayat.surah}</Text>
             </View>
-
-            {/* Trait fin */}
-            <View style={styles.thinLine} />
-
-            {/* Traduction */}
-            <Text style={styles.translationText}>« {ayat.translation} »</Text>
           </View>
 
           {/* ── Séparateur ── */}
@@ -216,7 +208,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingTop: Platform.OS === 'ios' ? 55 : 35,
+    paddingTop: Platform.OS === 'ios' ? 70 : 50,
     paddingBottom: 30,
     paddingHorizontal: 24,
   },
@@ -229,10 +221,6 @@ const styles = StyleSheet.create({
   topSection: {
     alignItems: 'center',
     marginBottom: 20,
-  },
-  crescent: {
-    fontSize: 56,
-    marginBottom: 8,
   },
   starsRow: {
     flexDirection: 'row',
@@ -249,7 +237,7 @@ const styles = StyleSheet.create({
     color: '#8BAF76',
   },
   bismillah: {
-    fontSize: 20,
+    fontSize: 22,
     color: '#4A3728',
     textAlign: 'center',
     fontWeight: '600',
@@ -279,7 +267,7 @@ const styles = StyleSheet.create({
   ayatCard: {
     backgroundColor: '#fff',
     borderRadius: 28,
-    padding: 28,
+    padding: 32,
     width: '100%',
     alignItems: 'center',
     borderWidth: 1,
@@ -290,51 +278,43 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 4,
   },
+  arabicContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    marginBottom: 15,
+  },
   quoteArabic: {
-    fontSize: 28,
+    fontSize: 32,
     color: '#8BAF76',
-    marginBottom: 4,
     fontWeight: 'bold',
+    marginHorizontal: 5,
   },
   arabicText: {
-    fontSize: 30,
+    fontSize: 32,
     color: '#4A3728',
     textAlign: 'center',
     writingDirection: 'rtl',
-    lineHeight: 52,
+    lineHeight: 56,
     fontWeight: '600',
     letterSpacing: 0.5,
-    marginVertical: 8,
   },
   surahBadge: {
     backgroundColor: '#F0F8EC',
     borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 18,
-    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    marginTop: 10,
     borderWidth: 1,
     borderColor: '#C8E6C9',
   },
   surahText: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#8BAF76',
     fontWeight: 'bold',
     textAlign: 'center',
     writingDirection: 'rtl',
-  },
-  thinLine: {
-    height: 1,
-    backgroundColor: '#F0E6D2',
-    width: '80%',
-    marginVertical: 16,
-  },
-  translationText: {
-    fontSize: 15,
-    color: '#8B735B',
-    textAlign: 'center',
-    fontStyle: 'italic',
-    lineHeight: 24,
-    paddingHorizontal: 8,
   },
 
   // ── Bouton ──
