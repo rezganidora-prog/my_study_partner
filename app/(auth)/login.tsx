@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ImageBackground } from 'react-native';
+import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { Colors } from '@/constants/GhibliTheme';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function LoginScreen() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,7 +15,7 @@ export default function LoginScreen() {
   async function handleAuth() {
     setLoading(true);
     const trimmedEmail = email.trim();
-    const { data, error } = isSignUp 
+    const { data, error } = isSignUp
       ? await supabase.auth.signUp({ email: trimmedEmail, password })
       : await supabase.auth.signInWithPassword({ email: trimmedEmail, password });
 
@@ -21,6 +23,9 @@ export default function LoginScreen() {
       alert(error.message);
     } else if (isSignUp && !data.session) {
       alert("Inscription réussie ! Vérifiez vos emails.");
+    } else if (data.session) {
+      // Afficher le splash islamique après login réussi
+      router.replace('/splash-ayat' as any);
     }
     setLoading(false);
   }

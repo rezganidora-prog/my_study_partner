@@ -4,35 +4,65 @@ import { StatusBar } from 'expo-status-bar'
 import { View, ActivityIndicator } from 'react-native'
 import { supabase } from '@/lib/supabase'
 import type { Session } from '@supabase/supabase-js'
-import { Colors } from '@/constants/GhibliTheme'
 import { ThemeProvider } from '../context/ThemeContext';
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isInitialCheckDone, setIsInitialCheckDone] = useState(false)
+
   const router = useRouter()
   const segments = useSegments()
 
   useEffect(() => {
+    // 1. Récupérer la session initiale
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setLoading(false)
     })
+
+    // 2. Écouter les changements d'auth (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
     })
+
     return () => subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
     if (loading) return
-    const inAuthGroup = segments[0] === ('(auth)' as any)
-    if (!session && !inAuthGroup) {
-      router.replace('/(auth)/login' as any)
-    } else if (session && inAuthGroup) {
-      router.replace('/(tabs)' as any)
+
+    // On vérifie si on est dans le groupe d'authentification ou sur le splash
+    const inAuthGroup = segments[0] === '(auth)'
+    const inSplash = segments[0] === 'splash-ayat'
+
+    if (!session) {
+      // CAS 1 : Pas de session
+      // On redirige vers le login si on n'est pas déjà dans le groupe auth
+      if (!inAuthGroup) {
+        router.replace('/(auth)/login')
+      }
+    } else {
+      // CAS 2 : On a une session
+      if (inAuthGroup) {
+        // Si on est dans le groupe auth (ex: LoginScreen) :
+
+        if (!isInitialCheckDone) {
+          // A. AU DÉMARRAGE : Redirection directe vers dashboard si session existante
+          // On saute le splash car l'utilisateur ne vient pas de se loguer manuellement
+          router.replace('/(tabs)')
+        }
+        // B. APRÈS LOGIN MANUEL : On ne fait RIEN ici.
+        // C'est login.tsx qui gère router.replace('/splash-ayat')
+        // En ne faisant rien, on évite que _layout court-circuite vers /(tabs)
+      }
     }
-  }, [session, loading, segments])
+
+    // On marque que le premier check (au chargement) a été effectué
+    if (!isInitialCheckDone) {
+      setIsInitialCheckDone(true)
+    }
+  }, [session, loading, segments, isInitialCheckDone])
 
   if (loading) {
     return (
@@ -45,7 +75,11 @@ export default function RootLayout() {
   return (
     <ThemeProvider>
       <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }} />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="splash-ayat" options={{ headerShown: false, animation: 'fade' }} />
+      </Stack>
     </ThemeProvider>
   )
 }

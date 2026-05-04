@@ -20,7 +20,7 @@ export default function PomodoroScreen() {
   });
 
   const [timeLeft, setTimeLeft] = useState(customTimes.focus * 60);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const modeConfig = {
     focus: { color: '#FF5252', icon: 'pizza-outline', label: 'Focus' },

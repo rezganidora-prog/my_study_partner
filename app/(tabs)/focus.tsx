@@ -1,108 +1,216 @@
-import { Ionicons } from '@expo/vector-icons';
-import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Alert,
-  Dimensions,
-  Modal,
-  Platform,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, Modal,
+  BackHandler, Platform, Animated, Alert, ScrollView, StatusBar,
 } from 'react-native';
-import { useTheme } from '../../context/ThemeContext';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { Audio } from 'expo-av';
 
-const { width } = Dimensions.get('window');
-
-// Palette Ghibli
-const GHIBLI_COLORS = {
-  background: '#FDF6E3', // Beige
-  primary: '#8BAF76',    // Vert
-  text: '#4A3728',       // Marron
-  accent: '#C4A882',     // Sable
-  danger: '#D48C8C',     // Rouge doux
-};
-
-const MESSAGES = [
-  'Le vent murmure : tu peux le faire... 🌿',
-  'Même les forêts silencieuses vibrent de sagesse. 🌳',
-  'Chaque seconde d\'effort est une graine plantée. 🌱',
-  'Tu avances, même quand tu ne t\'en rends pas compte. ✨',
-  'Le calme est la force de l\'apprentissage. 🍃',
-  'La magie opère dans le silence de ton travail. 🔮',
-  'Comme un voyageur dans la forêt, reste concentré sur ton chemin. 🌸',
+// ─── Constants ────────────────────────────────────────────────────────────────
+const DURATIONS = [
+  { label: '25 min', seconds: 25 * 60 },
+  { label: '45 min', seconds: 45 * 60 },
+  { label: '60 min', seconds: 60 * 60 },
 ];
 
-const DURATIONS = [25, 45, 60];
+const GHIBLI_MESSAGES = [
+  '"Avance, même doucement. C\'est déjà voler." 🍃',
+  '"Chaque seconde de silence est une graine de sagesse." 🌱',
+  '"La forêt murmure : tu es capable." 🌲',
+  '"Même Totoro travaille dans le calme." 🐾',
+  '"Comme Chihiro, transforme l\'effort en magie." ✨',
+  '"Le vent porte tes rêves vers demain." 🌙',
+  '"Howl construisait ses châteaux un sort à la fois." 🔮',
+  '"Le courage, c\'est continuer quand c\'est difficile." 🌸',
+];
 
+// Public lofi radio stream (icecast/shoutcast MP3)
+const LOFI_STREAM = 'https://stream.zeno.fm/f3wvbbqmdg8uv';
+
+type Phase = 'setup' | 'running' | 'paused' | 'done';
+
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function FocusScreen() {
-  const { isDark } = useTheme();
-  const [duration, setDuration] = useState(25);
-  const [isActive, setIsActive] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(25 * 60);
-  const [msgIdx, setMsgIdx] = useState(0);
+  const [phase, setPhase] = useState<Phase>('setup');
+  const [durationIdx, setDurationIdx] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(DURATIONS[0].seconds);
+  const [isMuted, setIsMuted] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
+  const [message] = useState(
+    () => GHIBLI_MESSAGES[Math.floor(Math.random() * GHIBLI_MESSAGES.length)]
+  );
 
+  const soundRef = useRef<Audio.Sound | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
 
-  // ── Gestion du Timer ────────────────────────────────────────────────────────
+  const selectedDuration = DURATIONS[durationIdx];
+  const progress = 1 - timeLeft / selectedDuration.seconds;
+  const isFocusing = phase === 'running' || phase === 'paused' || phase === 'done';
+
+  // ── Audio setup on mount ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (!isRunning || !isActive || timeLeft <= 0) {
-      if (timeLeft === 0 && isActive) void finishSession();
-      return;
-    }
-    timerRef.current = setInterval(() => setTimeLeft(t => t - 1), 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isRunning, isActive, timeLeft]);
-
-  // ── Fonctions de contrôle ──────────────────────────────────────────────────
-  const startFocus = async () => {
-    // 1. Plein écran immersif
-    StatusBar.setHidden(true, 'fade');
-
-    // 2. Empêcher la mise en veille
-    try {
-      await activateKeepAwakeAsync();
-    } catch (e) {}
-
-    // Reset du timer et activation
-    setTimeLeft(duration * 60);
-    setMsgIdx(Math.floor(Math.random() * MESSAGES.length));
-    setIsRunning(true);
-    setIsActive(true);
-  };
-
-  const teardown = useCallback(async () => {
-    StatusBar.setHidden(false, 'fade');
-    setIsActive(false);
-    setIsRunning(false);
-    try {
-      await deactivateKeepAwake();
-    } catch (e) {}
+    setupAudio();
+    return () => { void teardownAll(); };
   }, []);
 
-  const finishSession = useCallback(async () => {
-    await teardown();
-    
-    // Notification de fin via Alert (Compatible Expo Go SDK 53)
-    Alert.alert(
-      '🌿 Voyage terminé !',
-      'Félicitations ! Tu as complété ta session de concentration avec succès. ✨',
-      [{ text: 'Super !', onPress: () => {} }]
-    );
-  }, [teardown]);
+  const setupAudio = async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: false,
+      });
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: LOFI_STREAM },
+        { isLooping: true, volume: 0.45, isMuted: false, shouldPlay: false }
+      );
+      soundRef.current = sound;
+      setAudioReady(true);
+    } catch (_) {
+      // Stream inaccessible, continue sans audio
+    }
+  };
 
-  const handleEmergencyStop = () => {
+  const teardownAll = async () => {
+    clearTimer();
+    if (soundRef.current) {
+      await soundRef.current.stopAsync().catch(() => {});
+      await soundRef.current.unloadAsync().catch(() => {});
+      soundRef.current = null;
+    }
+    await deactivateKeepAwake().catch(() => {});
+  };
+
+  // ── Timer ──────────────────────────────────────────────────────────────────
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    clearTimer();
+    if (phase !== 'running') return;
+
+    timerRef.current = setInterval(() => {
+      setTimeLeft((t) => {
+        if (t <= 1) {
+          clearTimer();
+          // Délais pour laisser le state se propager
+          setTimeout(() => finishSession(), 50);
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+
+    return clearTimer;
+  }, [phase]);
+
+  // ── Keep awake ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (phase === 'running' || phase === 'paused') {
+      activateKeepAwakeAsync().catch(() => {});
+    } else {
+      deactivateKeepAwake().catch(() => {});
+    }
+  }, [phase]);
+
+  // ── Audio play/pause ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!soundRef.current) return;
+    if (phase === 'running' && !isMuted) {
+      soundRef.current.playAsync().catch(() => {});
+    } else {
+      soundRef.current.pauseAsync().catch(() => {});
+    }
+  }, [phase, isMuted]);
+
+  // ── Pulse animation ────────────────────────────────────────────────────────
+  useEffect(() => {
+    pulseLoop.current?.stop();
+    if (phase === 'running') {
+      pulseLoop.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.04, duration: 3500, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 3500, useNativeDriver: true }),
+        ])
+      );
+      pulseLoop.current.start();
+    } else {
+      Animated.timing(pulseAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+    }
+  }, [phase]);
+
+  // ── Block back button during focus ─────────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      const onBack = () => {
+        if (phase === 'running' || phase === 'paused') {
+          confirmExit();
+          return true;
+        }
+        return false;
+      };
+      const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+      return () => sub.remove();
+    }, [phase])
+  );
+
+  // ── Status bar ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (isFocusing) {
+      StatusBar.setHidden(true, 'fade');
+    } else {
+      StatusBar.setHidden(false, 'fade');
+    }
+    return () => { StatusBar.setHidden(false, 'fade'); };
+  }, [isFocusing]);
+
+  // ── Actions ────────────────────────────────────────────────────────────────
+  const startFocus = async () => {
+    setTimeLeft(selectedDuration.seconds);
+    setPhase('running');
+
+    Alert.alert(
+      '🔕 Mode silencieux',
+      'Pense à activer le mode silencieux sur ton téléphone pour éviter les interruptions pendant ta session.',
+      [{ text: 'Compris !', style: 'default' }],
+      { cancelable: true }
+    );
+  };
+
+  const togglePause = () => {
+    setPhase((p) => (p === 'running' ? 'paused' : 'running'));
+  };
+
+  const finishSession = async () => {
+    setPhase('done');
+    clearTimer();
+    await deactivateKeepAwake().catch(() => {});
+    if (soundRef.current) soundRef.current.pauseAsync().catch(() => {});
+  };
+
+  const exitFocus = async () => {
+    if (soundRef.current) soundRef.current.pauseAsync().catch(() => {});
+    clearTimer();
+    setPhase('setup');
+    setTimeLeft(selectedDuration.seconds);
+  };
+
+  const confirmExit = () => {
     Alert.alert(
       '⚠️ Quitter le mode Focus ?',
-      'Ta concentration est précieuse, es-tu sûr de vouloir t\'interrompre ?',
+      'Ta session sera perdue. Es-tu sûr·e ?',
       [
-        { text: 'Rester', style: 'cancel' },
-        { text: 'Quitter', style: 'destructive', onPress: teardown },
+        { text: 'Continuer la session', style: 'cancel' },
+        { text: 'Quitter', style: 'destructive', onPress: exitFocus },
       ]
     );
   };
@@ -113,118 +221,312 @@ export default function FocusScreen() {
     return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   };
 
-  const progress = Math.max(0, 1 - timeLeft / (duration * 60));
-
+  // ─── Setup Screen ─────────────────────────────────────────────────────────
   return (
-    <View style={[styles.container, { backgroundColor: GHIBLI_COLORS.background }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={[styles.title, { color: GHIBLI_COLORS.text }]}>Focus Ghibli 🌿</Text>
-          <Text style={[styles.subtitle, { color: GHIBLI_COLORS.primary }]}>Plonge dans un océan de calme</Text>
+          <Text style={styles.emoji}>🌿</Text>
+          <Text style={styles.title}>Mode Focus</Text>
+          <Text style={styles.subtitle}>Plonge dans un océan de calme Ghibli</Text>
         </View>
 
-        <View style={[styles.card, { borderColor: GHIBLI_COLORS.accent + '40' }]}>
-          <Text style={[styles.cardLabel, { color: GHIBLI_COLORS.text }]}>Durée de concentration</Text>
+        {/* Duration selector */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>Durée de concentration</Text>
           <View style={styles.durationRow}>
-            {DURATIONS.map(d => (
+            {DURATIONS.map((d, i) => (
               <TouchableOpacity
-                key={d}
-                style={[styles.durationBtn, duration === d && { backgroundColor: GHIBLI_COLORS.primary, borderColor: GHIBLI_COLORS.primary }]}
-                onPress={() => { setDuration(d); setTimeLeft(d * 60); }}
+                key={i}
+                style={[styles.durationBtn, durationIdx === i && styles.durationBtnActive]}
+                onPress={() => { setDurationIdx(i); setTimeLeft(d.seconds); }}
               >
-                <Text style={[styles.durationText, { color: duration === d ? '#fff' : GHIBLI_COLORS.text }]}>{d} min</Text>
+                <Text style={[styles.durationText, durationIdx === i && styles.durationTextActive]}>
+                  {d.label}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
 
-        <View style={styles.infoBox}>
+        {/* Preview timer */}
+        <View style={styles.previewContainer}>
+          <View style={styles.previewRing}>
+            <Text style={styles.previewTime}>{formatTime(selectedDuration.seconds)}</Text>
+            <Text style={styles.previewLabel}>durée sélectionnée</Text>
+          </View>
+        </View>
+
+        {/* Features list */}
+        <View style={styles.featuresCard}>
+          <Text style={styles.featuresTitle}>Ce que le mode Focus active</Text>
           {[
-            { icon: 'notifications-off-outline', text: 'Distractions bloquées' },
-            { icon: 'moon-outline', text: 'Écran toujours allumé' },
-            { icon: 'eye-off-outline', text: 'Plein écran immersif' },
-            { icon: 'lock-closed-outline', text: 'Navigation verrouillée' },
-          ].map((item, i) => (
-            <View key={i} style={styles.infoRow}>
-              <Ionicons name={item.icon as any} size={22} color={GHIBLI_COLORS.primary} />
-              <Text style={[styles.infoText, { color: GHIBLI_COLORS.text }]}>{item.text}</Text>
+            { icon: 'moon-outline',          text: 'Écran toujours allumé (expo-keep-awake)' },
+            { icon: 'eye-off-outline',        text: 'Plein écran immersif — barre cachée' },
+            { icon: 'lock-closed-outline',    text: 'Navigation verrouillée dans l\'app' },
+            { icon: 'musical-notes-outline',  text: audioReady ? 'Musique lofi prête 🎵' : 'Musique lofi (chargement...)' },
+            { icon: 'volume-mute-outline',    text: 'Pense à activer le mode silencieux 🔕' },
+          ].map((f, i) => (
+            <View key={i} style={styles.featureRow}>
+              <Ionicons name={f.icon as any} size={20} color="#8BAF76" />
+              <Text style={styles.featureText}>{f.text}</Text>
             </View>
           ))}
         </View>
 
-        <TouchableOpacity style={[styles.startBtn, { backgroundColor: GHIBLI_COLORS.primary }]} onPress={startFocus}>
+        {/* Start button */}
+        <TouchableOpacity style={styles.startBtn} onPress={startFocus} activeOpacity={0.85}>
           <Ionicons name="leaf-outline" size={24} color="#fff" />
           <Text style={styles.startBtnText}>Démarrer la session</Text>
         </TouchableOpacity>
+
+        <Text style={styles.hint}>
+          La musique lofi démarre automatiquement.{'\n'}
+          Active le mode silencieux pour éviter les interruptions.
+        </Text>
       </ScrollView>
 
-      {/* Overlay qui bloque la navigation */}
-      <Modal visible={isActive} animationType="fade" statusBarTranslucent>
-        <View style={[styles.focusOverlay, { backgroundColor: '#1A2618' }]}>
-          <View style={styles.overlayHeader}>
-            <View style={{ width: 50 }} />
-            <TouchableOpacity style={styles.emergencyBtn} onPress={handleEmergencyStop}>
-              <Ionicons name="exit-outline" size={20} color={GHIBLI_COLORS.danger} />
-              <Text style={styles.emergencyText}>Urgence</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.timerContainer}>
-            <View style={[styles.timerRing, { borderColor: GHIBLI_COLORS.primary + '30' }]}>
-              <View style={[styles.timerInner, { borderColor: GHIBLI_COLORS.primary }]}>
-                <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
-                <Text style={styles.timerSubText}>{isRunning ? 'Concentration...' : 'En pause'}</Text>
+      {/* ─── Focus Overlay Modal ─────────────────────────────────────────── */}
+      <Modal visible={isFocusing} animationType="fade" statusBarTranslucent hardwareAccelerated>
+        {phase === 'done' ? (
+          /* ─ Done screen ──────────────────────────────────────────────── */
+          <View style={[styles.overlay, styles.doneOverlay]}>
+            <View style={styles.doneContent}>
+              <Text style={styles.doneEmoji}>🌸</Text>
+              <Text style={styles.doneTitle}>Session terminée !</Text>
+              <Text style={styles.doneSub}>
+                Tu as accompli {selectedDuration.label} de concentration.{'\n'}
+                Totoro est fier de toi ! 🍃
+              </Text>
+              <View style={styles.doneBadge}>
+                <Ionicons name="checkmark-circle" size={22} color="#8BAF76" />
+                <Text style={styles.doneBadgeText}>+{selectedDuration.label} de focus</Text>
               </View>
+              <TouchableOpacity
+                style={styles.doneBtn}
+                onPress={() => { setPhase('setup'); setTimeLeft(selectedDuration.seconds); }}
+              >
+                <Text style={styles.doneBtnText}>Nouvelle session 🌱</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          /* ─ Running / Paused screen ──────────────────────────────────── */
+          <View style={styles.overlay}>
+            {/* Top bar */}
+            <View style={styles.topBar}>
+              {/* Mute button */}
+              <TouchableOpacity style={styles.muteBtn} onPress={() => setIsMuted((m) => !m)}>
+                <Ionicons
+                  name={isMuted ? 'volume-mute' : 'musical-notes'}
+                  size={22}
+                  color={isMuted ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.85)'}
+                />
+                <Text style={[styles.muteBtnText, isMuted && { opacity: 0.4 }]}>
+                  {isMuted ? 'Son coupé' : 'Lofi ♪'}
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={styles.overlayTitle}>Mode Focus 🌿</Text>
+
+              {/* Emergency exit */}
+              <TouchableOpacity style={styles.emergencyBtn} onPress={confirmExit}>
+                <Ionicons name="exit-outline" size={18} color="#D48C8C" />
+                <Text style={styles.emergencyText}>Urgence</Text>
+              </TouchableOpacity>
             </View>
 
-            <Text style={styles.ghibliMessage}>{MESSAGES[msgIdx]}</Text>
+            {/* Timer ring */}
+            <View style={styles.timerSection}>
+              <Animated.View
+                style={[styles.timerRingOuter, { transform: [{ scale: pulseAnim }] }]}
+              >
+                <View style={[
+                  styles.timerRingInner,
+                  phase === 'paused' && { borderColor: 'rgba(196,168,130,0.6)' },
+                ]}>
+                  <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
+                  <Text style={styles.timerPhaseLabel}>
+                    {phase === 'running' ? '✨ Concentration' : '⏸ En pause'}
+                  </Text>
+                </View>
+              </Animated.View>
 
-            <TouchableOpacity style={styles.pauseBtn} onPress={() => setIsRunning(!isRunning)}>
-              <Ionicons name={isRunning ? "pause" : "play"} size={40} color="#fff" />
-            </TouchableOpacity>
-          </View>
+              {/* Message Ghibli */}
+              <Text style={styles.ghibliMessage}>{message}</Text>
 
-          <View style={styles.progressSection}>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: GHIBLI_COLORS.primary }]} />
+              {/* Pause/Resume */}
+              <TouchableOpacity
+                style={[styles.pauseBtn, phase === 'paused' && styles.pauseBtnPaused]}
+                onPress={togglePause}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={phase === 'running' ? 'pause' : 'play'}
+                  size={38}
+                  color="#fff"
+                />
+              </TouchableOpacity>
             </View>
-            <Text style={styles.progressText}>{Math.round(progress * 100)}% complété</Text>
+
+            {/* Progress bar */}
+            <View style={styles.progressSection}>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${Math.min(progress * 100, 100)}%` }]} />
+              </View>
+              <Text style={styles.progressLabel}>
+                {Math.round(progress * 100)}% accompli
+              </Text>
+            </View>
           </View>
-        </View>
+        )}
       </Modal>
     </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollContent: { padding: 25, paddingTop: 60 },
-  header: { marginBottom: 35 },
-  title: { fontSize: 32, fontWeight: 'bold' },
-  subtitle: { fontSize: 16, fontWeight: '600', marginTop: 5 },
-  card: { backgroundColor: '#fff', borderRadius: 25, padding: 22, borderWidth: 1, marginBottom: 30, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
-  cardLabel: { fontSize: 14, fontWeight: 'bold', marginBottom: 18 },
-  durationRow: { flexDirection: 'row', gap: 12 },
-  durationBtn: { flex: 1, height: 55, borderRadius: 18, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#eee' },
-  durationText: { fontSize: 16, fontWeight: 'bold' },
-  infoBox: { gap: 18, marginBottom: 40, paddingHorizontal: 5 },
-  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 15 },
-  infoText: { fontSize: 16, fontWeight: '500' },
-  startBtn: { height: 65, borderRadius: 22, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10 },
-  startBtnText: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
-  focusOverlay: { flex: 1, padding: 30, justifyContent: 'space-between' },
-  overlayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 20 },
-  emergencyBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(212,140,140,0.15)', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 20 },
-  emergencyText: { color: '#D48C8C', fontWeight: 'bold' },
-  timerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  timerRing: { width: 290, height: 290, borderRadius: 145, borderWidth: 2, padding: 15, justifyContent: 'center', alignItems: 'center', marginBottom: 40 },
-  timerInner: { width: '100%', height: '100%', borderRadius: 130, borderWidth: 8, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)' },
-  timerText: { fontSize: 68, fontWeight: 'bold', color: '#FDF6E3', letterSpacing: 4 },
-  timerSubText: { fontSize: 12, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: 3, marginTop: 10 },
-  ghibliMessage: { fontSize: 19, color: 'rgba(255,255,255,0.85)', textAlign: 'center', lineHeight: 30, fontStyle: 'italic', marginBottom: 45, maxWidth: 300 },
-  pauseBtn: { width: 85, height: 85, borderRadius: 42.5, backgroundColor: 'rgba(139,175,118,0.25)', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#8BAF76' },
-  progressSection: { width: '100%', paddingBottom: 20 },
-  progressTrack: { height: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden', marginBottom: 12 },
-  progressFill: { height: '100%', borderRadius: 3 },
-  progressText: { fontSize: 13, color: 'rgba(255,255,255,0.3)', textAlign: 'center', letterSpacing: 1 },
+  // Setup screen
+  container: { flex: 1, backgroundColor: '#FDF6E3' },
+  scrollContent: { padding: 24, paddingTop: 60, paddingBottom: 40 },
+
+  header: { alignItems: 'center', marginBottom: 30 },
+  emoji: { fontSize: 52, marginBottom: 8 },
+  title: { fontSize: 30, fontWeight: 'bold', color: '#4A3728' },
+  subtitle: { fontSize: 14, color: '#8BAF76', fontWeight: '600', marginTop: 5, textAlign: 'center' },
+
+  card: {
+    backgroundColor: '#fff', borderRadius: 24, padding: 20,
+    borderWidth: 1, borderColor: '#F0E6D2', marginBottom: 20,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+  },
+  cardLabel: { fontSize: 13, fontWeight: 'bold', color: '#8B735B', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 14 },
+  durationRow: { flexDirection: 'row', gap: 10 },
+  durationBtn: {
+    flex: 1, height: 52, borderRadius: 16, justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1.5, borderColor: '#E8D9C0', backgroundColor: '#FAFAFA',
+  },
+  durationBtnActive: { backgroundColor: '#8BAF76', borderColor: '#8BAF76' },
+  durationText: { fontSize: 15, fontWeight: 'bold', color: '#8B735B' },
+  durationTextActive: { color: '#fff' },
+
+  previewContainer: { alignItems: 'center', marginBottom: 20 },
+  previewRing: {
+    width: 130, height: 130, borderRadius: 65, borderWidth: 3, borderColor: '#8BAF76',
+    justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff',
+  },
+  previewTime: { fontSize: 26, fontWeight: 'bold', color: '#4A3728' },
+  previewLabel: { fontSize: 10, color: '#C4A882', marginTop: 2 },
+
+  featuresCard: {
+    backgroundColor: '#fff', borderRadius: 24, padding: 20,
+    borderWidth: 1, borderColor: '#F0E6D2', marginBottom: 24, gap: 14,
+  },
+  featuresTitle: { fontSize: 13, fontWeight: 'bold', color: '#8B735B', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  featureRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  featureText: { fontSize: 14, color: '#4A3728', flex: 1 },
+
+  startBtn: {
+    backgroundColor: '#8BAF76', height: 62, borderRadius: 20,
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12,
+    shadowColor: '#8BAF76', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35, shadowRadius: 12, elevation: 6,
+    marginBottom: 16,
+  },
+  startBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+
+  hint: { textAlign: 'center', fontSize: 12, color: '#C4A882', lineHeight: 18 },
+
+  // Focus overlay
+  overlay: {
+    flex: 1, backgroundColor: '#0D1F0A',
+    paddingHorizontal: 24,
+    justifyContent: 'space-between',
+    paddingTop: Platform.OS === 'android' ? 40 : 55,
+    paddingBottom: 40,
+  },
+
+  topBar: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  muteBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20,
+  },
+  muteBtnText: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600' },
+  overlayTitle: { fontSize: 15, color: 'rgba(255,255,255,0.5)', fontWeight: '600' },
+  emergencyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(212,140,140,0.12)',
+    paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20,
+  },
+  emergencyText: { color: '#D48C8C', fontSize: 12, fontWeight: 'bold' },
+
+  timerSection: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 32 },
+  timerRingOuter: {
+    width: 280, height: 280, borderRadius: 140,
+    borderWidth: 2, borderColor: 'rgba(139,175,118,0.2)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  timerRingInner: {
+    width: 250, height: 250, borderRadius: 125,
+    borderWidth: 8, borderColor: 'rgba(139,175,118,0.9)',
+    justifyContent: 'center', alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  timerText: { fontSize: 62, fontWeight: 'bold', color: '#FDF6E3', letterSpacing: 3 },
+  timerPhaseLabel: {
+    fontSize: 11, color: 'rgba(255,255,255,0.4)',
+    textTransform: 'uppercase', letterSpacing: 3, marginTop: 8,
+  },
+
+  ghibliMessage: {
+    fontSize: 17, color: 'rgba(255,255,255,0.75)',
+    textAlign: 'center', lineHeight: 26, fontStyle: 'italic',
+    maxWidth: 290,
+  },
+
+  pauseBtn: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: 'rgba(139,175,118,0.2)',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: 'rgba(139,175,118,0.7)',
+  },
+  pauseBtnPaused: {
+    backgroundColor: 'rgba(196,168,130,0.2)',
+    borderColor: 'rgba(196,168,130,0.7)',
+  },
+
+  progressSection: { gap: 10 },
+  progressTrack: {
+    height: 4, backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 2, overflow: 'hidden',
+  },
+  progressFill: { height: '100%', backgroundColor: '#8BAF76', borderRadius: 2 },
+  progressLabel: { fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', letterSpacing: 1 },
+
+  // Done screen
+  doneOverlay: { justifyContent: 'center', alignItems: 'center' },
+  doneContent: { alignItems: 'center', gap: 16, paddingHorizontal: 30 },
+  doneEmoji: { fontSize: 72 },
+  doneTitle: { fontSize: 32, fontWeight: 'bold', color: '#FDF6E3' },
+  doneSub: { fontSize: 16, color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 24 },
+  doneBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(139,175,118,0.15)',
+    paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20,
+    borderWidth: 1, borderColor: 'rgba(139,175,118,0.4)',
+  },
+  doneBadgeText: { color: '#8BAF76', fontWeight: 'bold', fontSize: 15 },
+  doneBtn: {
+    backgroundColor: '#8BAF76', height: 58, borderRadius: 18,
+    paddingHorizontal: 40, justifyContent: 'center', alignItems: 'center',
+    marginTop: 8,
+  },
+  doneBtnText: { color: '#fff', fontSize: 17, fontWeight: 'bold' },
 });

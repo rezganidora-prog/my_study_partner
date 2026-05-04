@@ -1,235 +1,451 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, 
-  Image, TextInput, Modal, KeyboardAvoidingView, 
-  Platform, Alert, Linking, ActivityIndicator, Dimensions 
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  Image, TextInput, Modal, KeyboardAvoidingView,
+  Platform, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
+import * as WebBrowser from 'expo-web-browser';
 
-const { width } = Dimensions.get('window');
+const decodeBase64 = (base64: string) => {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+  return bytes.buffer;
+};
+
+const FICTIONAL_PARTNERS = [
+  {
+    id: 'fictional-1',
+    full_name: 'Sarah',
+    username: 'sarah_maths',
+    avatar_url: 'https://api.dicebear.com/7.x/avataaars/png?seed=Sarah&backgroundColor=b6e3f4',
+    specialty: 'Génie Maths 🧮',
+    responses: [
+      "Bonne question ! En maths, il faut comprendre le concept avant tout 💡",
+      "Moi je révise toujours avec des fiches récapitulatives 📝",
+      "On peut faire un quiz ensemble ! 🎯",
+      "Essaie les exercices du chapitre 3, ils sont vraiment bien 👍",
+      "Tu veux qu'on fasse une session de révision ce soir ? 📚",
+    ],
+  },
+  {
+    id: 'fictional-2',
+    full_name: 'Thomas',
+    username: 'thomas_ai',
+    avatar_url: 'https://api.dicebear.com/7.x/avataaars/png?seed=Thomas&backgroundColor=c0aede',
+    specialty: 'IA & Algo 🤖',
+    responses: [
+      "En IA, la clé c'est la qualité des données 📊",
+      "J'utilise Python pour tout, c'est tellement puissant ! 🐍",
+      "Tu connais les réseaux de neurones convolutifs ? 🧠",
+      "Je peux t'expliquer les algorithmes de tri si tu veux 😊",
+      "ChatGPT c'est bien mais comprendre les bases c'est mieux 🔥",
+    ],
+  },
+  {
+    id: 'fictional-3',
+    full_name: 'Léa',
+    username: 'lea_design',
+    avatar_url: 'https://api.dicebear.com/7.x/avataaars/png?seed=Lea&backgroundColor=ffd5dc',
+    specialty: 'Design & UX 🎨',
+    responses: [
+      "Le design c'est avant tout penser à l'utilisateur ! 🎯",
+      "J'adore Figma pour créer mes maquettes 💜",
+      "On peut faire une session créative ensemble 🌟",
+      "La couleur et la typographie, c'est 80% du design ! ✨",
+      "Tu veux des retours sur ton interface ? Je peux regarder 👀",
+    ],
+  },
+];
 
 export default function SocialScreen() {
-  const [activeRoom, setActiveRoom] = useState<any>(null); // { id, name, type: 'room'|'user' }
+  const [activeRoom, setActiveRoom] = useState<any>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [user, setUser] = useState<any>(null);
-  const [partners, setPartners] = useState<any[]>([]);
+  const [realPartners, setRealPartners] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [loadingPartners, setLoadingPartners] = useState(true);
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user));
-    fetchPartners();
+    initUser();
   }, []);
 
-  useEffect(() => {
-    if (activeRoom) {
-      fetchMessages();
-      const channel = supabase
-        .channel(`public:messages:${activeRoom.id}`)
-        .on('postgres_changes', { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'messages', 
-          filter: `room_id=eq.${activeRoom.id}` 
-        }, (payload) => {
-          setMessages((prev) => [...prev, payload.new]);
-        })
-        .subscribe();
-
-      return () => { supabase.removeChannel(channel); };
-    }
-  }, [activeRoom]);
-
-  const fetchPartners = async () => {
-    const { data, error } = await supabase.from('profiles').select('*').limit(20);
-    if (!error && data) {
-      setPartners(data.filter(p => p.id !== user?.id));
-    }
+  const initUser = async () => {
+    const { data } = await supabase.auth.getUser();
+    setUser(data.user);
+    await fetchRealPartners(data.user?.id);
   };
 
-  const fetchMessages = async () => {
+  const getPrivateRoomId = (user1: string, user2: string) =>
+    [user1, user2].sort().join('--');
+
+  useEffect(() => {
+    if (!activeRoom) return;
+
+    if (activeRoom.id.startsWith('fictional-')) {
+      const partner = FICTIONAL_PARTNERS.find((p) => p.id === activeRoom.id);
+      setMessages([{
+        id: 'm1',
+        username: partner?.username,
+        content: 'Salut ! On révise ensemble ? 👋',
+        user_id: 'fictional',
+      }]);
+      return;
+    }
+
+    const roomId =
+      activeRoom.type === 'user'
+        ? getPrivateRoomId(user?.id, activeRoom.id)
+        : activeRoom.id;
+
+    fetchMessages(roomId);
+
+    const channel = supabase
+      .channel(`room-${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
+        (payload) => {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [activeRoom]);
+
+  const fetchRealPartners = async (currentUserId?: string) => {
+    setLoadingPartners(true);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, username, avatar_url')
+      .limit(30);
+    if (!error && data) {
+      setRealPartners(data.filter((p) => p.id !== currentUserId));
+    }
+    setLoadingPartners(false);
+  };
+
+  const fetchMessages = async (roomId: string) => {
     const { data } = await supabase
       .from('messages')
       .select('*')
-      .eq('room_id', activeRoom.id)
+      .eq('room_id', roomId)
       .order('created_at', { ascending: true });
     if (data) setMessages(data);
   };
 
-  const sendMessage = async (content?: string, mediaUrl?: string, mediaType?: 'image' | 'video') => {
+  const sendMessage = async (
+    content?: string,
+    mediaUrl?: string,
+    mediaType?: 'image' | 'video'
+  ) => {
     if (!user || !activeRoom) return;
     if (!content?.trim() && !mediaUrl) return;
 
-    const { error } = await supabase.from('messages').insert({
-      user_id: user.id,
-      room_id: activeRoom.id,
-      content: content || '',
-      username: user.email.split('@')[0],
-      media_url: mediaUrl || null,
-      media_type: mediaType || null
-    });
-
-    if (error) {
-      Alert.alert("Erreur 🛑", "Impossible d'envoyer le message. Vérifie ta config SQL !");
-    } else {
+    if (activeRoom.id.startsWith('fictional-')) {
+      const partner = FICTIONAL_PARTNERS.find((p) => p.id === activeRoom.id);
+      const myMsg = {
+        id: Date.now().toString(),
+        username: user.email?.split('@')[0],
+        content: content || '',
+        media_url: mediaUrl || null,
+        media_type: mediaType || null,
+        user_id: user.id,
+      };
+      setMessages((prev) => [...prev, myMsg]);
       setNewMessage('');
+      setTimeout(() => {
+        const responses = partner?.responses ?? ['Super ! 👍'];
+        const response = responses[Math.floor(Math.random() * responses.length)];
+        setMessages((prev) => [...prev, {
+          id: (Date.now() + 1).toString(),
+          username: partner?.username,
+          content: response,
+          user_id: 'fictional',
+        }]);
+      }, 1500);
+      return;
+    }
+
+    const roomId =
+      activeRoom.type === 'user'
+        ? getPrivateRoomId(user.id, activeRoom.id)
+        : activeRoom.id;
+
+    setNewMessage('');
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        user_id: user.id,
+        room_id: roomId,
+        content: content || '',
+        username: user.email?.split('@')[0],
+        media_url: mediaUrl || null,
+        media_type: mediaType || null,
+      })
+      .select()
+      .single();
+
+    if (!error && data) {
+      setMessages((prev) =>
+        prev.some((m) => m.id === data.id) ? prev : [...prev, data]
+      );
     }
   };
 
   const pickMedia = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission requise', "Autorise l'accès à ta galerie.");
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
+      mediaTypes: ['images'],
       allowsEditing: true,
       quality: 0.5,
       base64: true,
     });
-
-    if (!result.canceled) {
-      uploadMedia(result.assets[0]);
-    }
+    if (!result.canceled) uploadMedia(result.assets[0]);
   };
 
   const uploadMedia = async (asset: any) => {
+    setUploading(true);
     try {
-      setUploading(true);
-      const fileExt = asset.uri.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
-      const type = asset.type === 'video' ? 'video' : 'image';
-
-      // Conversion de l'URI en Blob (Méthode native Expo)
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
-
+      if (activeRoom?.id.startsWith('fictional-')) {
+        await sendMessage('', asset.uri, 'image');
+        return;
+      }
+      const filePath = `${user.id}/${Date.now()}.jpg`;
+      const arrayBuffer = decodeBase64(asset.base64!);
       const { error: uploadError } = await supabase.storage
         .from('chat-media')
-        .upload(filePath, blob, {
-          contentType: asset.type === 'video' ? 'video/mp4' : 'image/jpeg',
-          cacheControl: '3600',
-          upsert: false
-        });
-
+        .upload(filePath, arrayBuffer, { contentType: 'image/jpeg' });
       if (uploadError) throw uploadError;
-
       const { data } = supabase.storage.from('chat-media').getPublicUrl(filePath);
-      sendMessage('', data.publicUrl, type);
+      await sendMessage('', data.publicUrl, 'image');
     } catch (error: any) {
-      Alert.alert('Erreur Upload 🛑', "Vérifie que le bucket 'chat-media' est créé sur ton Supabase !");
+      Alert.alert('Erreur', error.message);
     } finally {
       setUploading(false);
     }
   };
 
-  const openMeet = () => {
-    const meetId = activeRoom?.id.replace(/\s/g, '-').toLowerCase();
-    Linking.openURL(`https://meet.google.com/new`);
-  };
+  const filteredPartners = realPartners.filter((p) =>
+    (p.full_name || p.username || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const partnerDisplayName = activeRoom?.full_name || activeRoom?.name || 'Chat';
 
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Text style={styles.title}>Study With Others 🤝</Text>
-          <Text style={styles.subtitle}>Travaille avec tes vrais collègues</Text>
+          <Text style={styles.subtitle}>Retrouve tes collègues et apprends ensemble</Text>
         </View>
 
-        <Text style={styles.sectionTitle}>Salons d'étude 📖</Text>
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#8BAF76" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Rechercher un collègue..."
+            placeholderTextColor="#C4A882"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+
+        {/* Salons publics */}
+        <Text style={styles.sectionTitle}>Salons Publics 📖</Text>
         <View style={styles.roomsGrid}>
-          {['Bibliothèque', 'Salle de Maths', 'Cafétéria'].map(name => (
-            <TouchableOpacity 
-              key={name} 
-              style={styles.roomCardSmall} 
+          {['Bibliothèque', 'Cafétéria'].map((name) => (
+            <TouchableOpacity
+              key={name}
+              style={styles.roomCardSmall}
               onPress={() => setActiveRoom({ id: name, name, type: 'room' })}
             >
-              <Ionicons name="people" size={24} color="#8BAF76" />
+              <Ionicons name="people" size={22} color="#8BAF76" />
               <Text style={styles.roomNameSmall}>{name}</Text>
-              <Text style={styles.roomSub}>Rejoindre</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        <Text style={styles.sectionTitle}>Mes Collègues en ligne 👥</Text>
+        {/* Partenaires Demo */}
+        <Text style={styles.sectionTitle}>Partenaires Demo 🌟</Text>
         <View style={styles.partnersList}>
-          {partners.map(p => (
-            <TouchableOpacity 
-              key={p.id} 
-              style={styles.partnerItem} 
-              onPress={() => setActiveRoom({ id: p.id, name: p.full_name || p.username || 'Collègue', type: 'user' })}
+          {FICTIONAL_PARTNERS.map((p) => (
+            <TouchableOpacity
+              key={p.id}
+              style={[styles.partnerItem, styles.demoPartnerItem]}
+              onPress={() => setActiveRoom({ ...p, type: 'fictional' })}
             >
-              <Image 
-                source={{ uri: p.avatar_url || `https://ui-avatars.com/api/?name=${p.username}&background=random` }} 
-                style={styles.avatar} 
-              />
-              <View style={{ flex: 1, marginLeft: 15 }}>
-                <Text style={styles.partnerName}>{p.full_name || p.username || 'Collègue'}</Text>
-                <Text style={styles.partnerStatus}>✨ Prêt à réviser</Text>
+              <Image source={{ uri: p.avatar_url }} style={styles.avatar} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <View style={styles.nameRow}>
+                  <Text style={styles.partnerName}>{p.full_name}</Text>
+                  <View style={styles.demoBadge}>
+                    <Text style={styles.demoBadgeText}>DEMO</Text>
+                  </View>
+                </View>
+                <Text style={styles.partnerStatus}>{p.specialty}</Text>
               </View>
-              <Ionicons name="chatbubble-ellipses-outline" size={22} color="#8BAF76" />
+              <Ionicons name="chevron-forward" size={18} color="#8BAF76" />
             </TouchableOpacity>
           ))}
-          {partners.length === 0 && <Text style={styles.emptyText}>Aucun autre étudiant trouvé... 🦉</Text>}
         </View>
+
+        {/* Collègues réels */}
+        <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Collègues Réels 👥</Text>
+        {loadingPartners ? (
+          <ActivityIndicator color="#8BAF76" style={{ marginVertical: 20 }} />
+        ) : filteredPartners.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="people-outline" size={32} color="#C4A882" />
+            <Text style={styles.emptyText}>
+              {searchQuery
+                ? 'Aucun résultat pour cette recherche'
+                : "Aucun collègue pour l'instant. Invite des amis !"}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.partnersList}>
+            {filteredPartners.map((p) => (
+              <TouchableOpacity
+                key={p.id}
+                style={styles.partnerItem}
+                onPress={() =>
+                  setActiveRoom({
+                    id: p.id,
+                    name: p.full_name || p.username || 'Collègue',
+                    full_name: p.full_name,
+                    type: 'user',
+                  })
+                }
+              >
+                <Image
+                  source={{
+                    uri:
+                      p.avatar_url ||
+                      `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                        p.full_name || p.username || 'U'
+                      )}&background=8BAF76&color=fff`,
+                  }}
+                  style={styles.avatar}
+                />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.partnerName}>
+                    {p.full_name || p.username || 'Collègue'}
+                  </Text>
+                  <Text style={styles.partnerStatus}>🟢 En ligne</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#C4A882" />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </ScrollView>
 
+      {/* Modal Chat */}
       <Modal visible={!!activeRoom} animationType="slide">
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.chatContainer}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.chatContainer}
+        >
+          {/* Header */}
           <View style={styles.chatHeader}>
             <TouchableOpacity onPress={() => { setActiveRoom(null); setMessages([]); }}>
               <Ionicons name="chevron-down" size={28} color="#4A3728" />
             </TouchableOpacity>
             <View style={{ alignItems: 'center' }}>
-              <Text style={styles.chatRoomName}>{activeRoom?.name}</Text>
-              <TouchableOpacity style={styles.meetBtn} onPress={openMeet}>
+              <View style={styles.chatTitleRow}>
+                <Text style={styles.chatRoomName}>{partnerDisplayName}</Text>
+                {activeRoom?.id?.startsWith('fictional-') && (
+                  <View style={[styles.demoBadge, { marginLeft: 8 }]}>
+                    <Text style={styles.demoBadgeText}>DEMO</Text>
+                  </View>
+                )}
+              </View>
+              <TouchableOpacity
+                style={styles.meetBtn}
+                onPress={() => WebBrowser.openBrowserAsync('https://meet.google.com/landing')}
+              >
                 <Ionicons name="videocam" size={14} color="#fff" />
-                <Text style={styles.meetBtnText}>Google Meet réel</Text>
+                <Text style={styles.meetBtnText}>Google Meet</Text>
               </TouchableOpacity>
             </View>
             <View style={{ width: 28 }} />
           </View>
 
-          <ScrollView 
+          {/* Messages */}
+          <ScrollView
             ref={scrollViewRef}
             style={styles.messagesList}
             onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
           >
-            {messages.map((msg, idx) => (
-              <View key={idx} style={[styles.msgWrapper, msg.user_id === user?.id ? { alignItems: 'flex-end' } : { alignItems: 'flex-start' }]}>
-                <Text style={styles.msgUsername}>{msg.username}</Text>
-                <View style={[styles.bubble, msg.user_id === user?.id ? styles.myBubble : styles.theirBubble]}>
-                  {msg.media_url ? (
-                    msg.media_type === 'image' ? (
-                      <Image source={{ uri: msg.media_url }} style={styles.msgImage} resizeMode="cover" />
-                    ) : (
-                      <View style={styles.videoPlaceholder}>
-                        <Ionicons name="play-circle" size={40} color="#fff" />
-                        <Text style={{ color: '#fff', fontSize: 10 }}>Vidéo reçue</Text>
-                      </View>
-                    )
-                  ) : null}
-                  {msg.content ? <Text style={[styles.msgText, msg.user_id === user?.id && { color: '#fff' }]}>{msg.content}</Text> : null}
+            {messages.map((msg, idx) => {
+              const isMine = msg.user_id === user?.id;
+              return (
+                <View
+                  key={idx}
+                  style={[
+                    styles.msgWrapper,
+                    isMine ? { alignItems: 'flex-end' } : { alignItems: 'flex-start' },
+                  ]}
+                >
+                  {!isMine && (
+                    <Text style={styles.msgUsername}>{msg.username}</Text>
+                  )}
+                  <View style={[styles.bubble, isMine ? styles.myBubble : styles.theirBubble]}>
+                    {msg.media_url && (
+                      <Image
+                        source={{ uri: msg.media_url }}
+                        style={styles.msgImage}
+                        resizeMode="cover"
+                      />
+                    )}
+                    {msg.content ? (
+                      <Text style={[styles.msgText, isMine && { color: '#fff' }]}>
+                        {msg.content}
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </ScrollView>
 
-          {uploading && <ActivityIndicator style={{ marginBottom: 10 }} color="#8BAF76" />}
-
+          {/* Zone de saisie */}
           <View style={styles.inputArea}>
-            <TouchableOpacity style={styles.plusBtn} onPress={pickMedia}>
-              <Ionicons name="add-circle" size={30} color="#8BAF76" />
+            <TouchableOpacity style={styles.plusBtn} onPress={pickMedia} disabled={uploading}>
+              {uploading ? (
+                <ActivityIndicator size="small" color="#8BAF76" />
+              ) : (
+                <Ionicons name="add-circle" size={30} color="#8BAF76" />
+              )}
             </TouchableOpacity>
-            <TextInput 
-              style={styles.chatInput} 
-              placeholder="Écris un message..." 
+            <TextInput
+              style={styles.chatInput}
+              placeholder="Écris à ton collègue..."
               placeholderTextColor="#C4A882"
               value={newMessage}
               onChangeText={setNewMessage}
               multiline
             />
-            <TouchableOpacity style={styles.sendBtn} onPress={() => sendMessage(newMessage)}>
+            <TouchableOpacity
+              style={[styles.sendBtn, !newMessage.trim() && styles.sendBtnDisabled]}
+              onPress={() => sendMessage(newMessage)}
+              disabled={!newMessage.trim()}
+            >
               <Ionicons name="send" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -241,38 +457,79 @@ export default function SocialScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FDF6E3' },
-  scrollContent: { padding: 20, paddingTop: 60, paddingBottom: 40 },
-  header: { marginBottom: 30 },
-  title: { fontSize: 28, fontWeight: 'bold', color: '#4A3728' },
-  subtitle: { fontSize: 14, color: '#8BAF76', fontWeight: '600' },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#4A3728', marginBottom: 15, marginTop: 10 },
-  roomsGrid: { flexDirection: 'row', gap: 12, marginBottom: 30 },
-  roomCardSmall: { flex: 1, backgroundColor: '#fff', borderRadius: 20, padding: 15, alignItems: 'center', borderWidth: 1, borderColor: '#F0E6D2' },
-  roomNameSmall: { fontSize: 14, fontWeight: 'bold', color: '#4A3728', marginTop: 5 },
-  roomSub: { fontSize: 11, color: '#8BAF76', fontWeight: 'bold' },
-  partnersList: { gap: 12 },
-  partnerItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 15, borderRadius: 22, borderWidth: 1, borderColor: '#F0E6D2' },
-  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#F9F6F0' },
-  partnerName: { fontSize: 16, fontWeight: 'bold', color: '#4A3728' },
-  partnerStatus: { fontSize: 12, color: '#8BAF76' },
-  emptyText: { textAlign: 'center', color: '#C4A882', marginTop: 20, fontStyle: 'italic' },
-
+  scrollContent: { padding: 20, paddingTop: 60, paddingBottom: 30 },
+  header: { marginBottom: 20 },
+  title: { fontSize: 26, fontWeight: 'bold', color: '#4A3728' },
+  subtitle: { fontSize: 13, color: '#8BAF76', fontWeight: '600', marginTop: 4 },
+  searchContainer: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+    borderRadius: 15, paddingHorizontal: 15, height: 50, marginBottom: 25,
+    borderWidth: 1, borderColor: '#F0E6D2',
+  },
+  searchInput: { flex: 1, marginLeft: 10, fontSize: 15, color: '#4A3728' },
+  sectionTitle: { fontSize: 17, fontWeight: 'bold', color: '#4A3728', marginBottom: 12 },
+  roomsGrid: { flexDirection: 'row', gap: 10, marginBottom: 25 },
+  roomCardSmall: {
+    flex: 1, backgroundColor: '#fff', borderRadius: 18, padding: 12,
+    alignItems: 'center', borderWidth: 1, borderColor: '#F0E6D2',
+  },
+  roomNameSmall: { fontSize: 13, fontWeight: 'bold', color: '#4A3728', marginTop: 4 },
+  partnersList: { gap: 10, marginBottom: 10 },
+  partnerItem: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+    padding: 12, borderRadius: 20, borderWidth: 1, borderColor: '#F0E6D2',
+  },
+  demoPartnerItem: { backgroundColor: '#F1F8E9', borderColor: '#C8E6C9' },
+  avatar: { width: 48, height: 48, borderRadius: 24 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  partnerName: { fontSize: 15, fontWeight: 'bold', color: '#4A3728' },
+  demoBadge: {
+    backgroundColor: '#8BAF76', paddingHorizontal: 7, paddingVertical: 2,
+    borderRadius: 8,
+  },
+  demoBadgeText: { color: '#fff', fontSize: 9, fontWeight: 'bold', letterSpacing: 0.5 },
+  partnerStatus: { fontSize: 12, color: '#8BAF76', marginTop: 2 },
+  emptyState: {
+    backgroundColor: '#fff', borderRadius: 16, padding: 25,
+    alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#F0E6D2',
+  },
+  emptyText: { color: '#C4A882', fontSize: 14, textAlign: 'center' },
   chatContainer: { flex: 1, backgroundColor: '#FDF6E3' },
-  chatHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 50, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0E6D2' },
-  chatRoomName: { fontSize: 18, fontWeight: 'bold', color: '#4A3728' },
-  meetBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#4285F4', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, marginTop: 4 },
-  meetBtnText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
+  chatHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 15, paddingTop: Platform.OS === 'ios' ? 55 : 25,
+    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0E6D2',
+  },
+  chatTitleRow: { flexDirection: 'row', alignItems: 'center' },
+  chatRoomName: { fontSize: 17, fontWeight: 'bold', color: '#4A3728' },
+  meetBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#4285F4',
+    paddingVertical: 5, paddingHorizontal: 10, borderRadius: 15, marginTop: 5,
+  },
+  meetBtnText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
   messagesList: { flex: 1, padding: 15 },
-  msgWrapper: { marginBottom: 15, width: '100%' },
-  msgUsername: { fontSize: 10, color: '#C4A882', marginBottom: 4, marginLeft: 5 },
-  bubble: { maxWidth: '80%', padding: 12, borderRadius: 20, overflow: 'hidden' },
-  myBubble: { backgroundColor: '#8BAF76', borderBottomRightRadius: 4 },
-  theirBubble: { backgroundColor: '#fff', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: '#F0E6D2' },
-  msgText: { fontSize: 15, lineHeight: 21, color: '#4A3728' },
-  msgImage: { width: 220, height: 160, borderRadius: 12, marginBottom: 8 },
-  videoPlaceholder: { width: 220, height: 160, backgroundColor: '#000', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
-  inputArea: { flexDirection: 'row', padding: 15, paddingBottom: Platform.OS === 'ios' ? 40 : 20, backgroundColor: '#fff', alignItems: 'center', gap: 10 },
-  plusBtn: { padding: 5 },
-  chatInput: { flex: 1, backgroundColor: '#F9F6F0', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, maxHeight: 100, color: '#4A3728' },
-  sendBtn: { backgroundColor: '#8BAF76', width: 45, height: 45, borderRadius: 22.5, justifyContent: 'center', alignItems: 'center' },
+  msgWrapper: { marginBottom: 10, width: '100%' },
+  msgUsername: { fontSize: 11, color: '#8B735B', marginBottom: 3, marginLeft: 4 },
+  bubble: { maxWidth: '75%', padding: 10, borderRadius: 18 },
+  myBubble: { backgroundColor: '#8BAF76' },
+  theirBubble: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#F0E6D2' },
+  msgText: { fontSize: 14, color: '#4A3728', lineHeight: 20 },
+  msgImage: { width: 200, height: 150, borderRadius: 10, marginBottom: 5 },
+  inputArea: {
+    flexDirection: 'row', padding: 12,
+    paddingBottom: Platform.OS === 'ios' ? 35 : 15,
+    backgroundColor: '#fff', alignItems: 'center', gap: 8,
+    borderTopWidth: 1, borderTopColor: '#F0E6D2',
+  },
+  plusBtn: { padding: 2 },
+  chatInput: {
+    flex: 1, backgroundColor: '#F9F6F0', borderRadius: 20,
+    paddingHorizontal: 12, paddingVertical: 8, maxHeight: 80,
+    color: '#4A3728', fontSize: 14,
+  },
+  sendBtn: {
+    backgroundColor: '#8BAF76', width: 40, height: 40,
+    borderRadius: 20, justifyContent: 'center', alignItems: 'center',
+  },
+  sendBtnDisabled: { backgroundColor: '#C4A882' },
 });
