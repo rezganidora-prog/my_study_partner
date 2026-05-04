@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { View, ActivityIndicator } from 'react-native'
 import { supabase } from '@/lib/supabase'
 import type { Session } from '@supabase/supabase-js'
 import { Colors } from '@/constants/GhibliTheme'
+import { ThemeProvider } from '../context/ThemeContext';
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null)
@@ -35,16 +36,16 @@ export default function RootLayout() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.beige }}>
-        <ActivityIndicator size="large" color={Colors.green} />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FDF6E3' }}>
+        <ActivityIndicator size="large" color="#8BAF76" />
       </View>
     )
   }
 
   return (
-    <>
-      <StatusBar style="dark" backgroundColor={Colors.beige} />
+    <ThemeProvider>
+      <StatusBar style="dark" />
       <Stack screenOptions={{ headerShown: false }} />
-    </>
+    </ThemeProvider>
   )
 }

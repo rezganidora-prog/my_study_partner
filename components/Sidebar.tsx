@@ -26,6 +26,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
     { name: 'Study With Others', icon: 'people-outline', path: '/(tabs)/social' },
     { name: 'Mes Cours', icon: 'book-outline', path: '/(tabs)/courses' },
     { name: 'Quiz', icon: 'bulb-outline', path: '/(tabs)/quiz' },
+    { name: 'Mode Focus', icon: 'eye-off-outline', path: '/(tabs)/focus' },
     { name: 'Chatbot IA', icon: 'headset-outline', path: '/(tabs)/chatbot' },
   ];
 

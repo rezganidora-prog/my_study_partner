@@ -12,7 +12,7 @@ export default function PomodoroScreen() {
   const [sessionsDone, setSessionsDone] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   
-  // Custom Times (in minutes)
+  // Temps personnalisés (en minutes)
   const [customTimes, setCustomTimes] = useState({
     focus: 25,
     short: 5,
@@ -72,33 +72,10 @@ export default function PomodoroScreen() {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const [isConcentrationMode, setIsConcentrationMode] = useState(false);
-
-  // ... previous logic remains the same ...
-
-  if (isConcentrationMode) {
-    return (
-      <View style={[styles.container, { backgroundColor: '#1A1A1A', paddingTop: 100 }]}>
-        <Text style={[styles.title, { color: '#8BAF76', marginBottom: 50 }]}>Mode Concentration Actif 🤫</Text>
-        <View style={[styles.timerCircleOuter, { borderColor: '#333' }]}>
-          <View style={[styles.timerCircleInner, { borderColor: modeConfig[mode].color, backgroundColor: '#222' }]}>
-            <Text style={[styles.timerText, { color: '#fff' }]}>{formatTime(timeLeft)}</Text>
-          </View>
-        </View>
-        <TouchableOpacity 
-          style={[styles.mainBtn, { backgroundColor: '#444', marginTop: 50, width: 200 }]} 
-          onPress={() => setIsConcentrationMode(false)}
-        >
-          <Text style={styles.mainBtnText}>Quitter le mode</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Top Tabs */}
+        {/* Onglets du haut */}
         <View style={styles.tabsContainer}>
           {(['focus', 'short', 'long'] as TimerMode[]).map(m => (
             <TouchableOpacity 
@@ -112,12 +89,9 @@ export default function PomodoroScreen() {
           ))}
         </View>
 
-        {/* Main Timer Card */}
+        {/* Carte du minuteur principal */}
         <View style={styles.timerCard}>
           <View style={styles.settingsHeader}>
-            <TouchableOpacity onPress={() => setIsConcentrationMode(true)}>
-              <Ionicons name="eye-off-outline" size={24} color="#8BAF76" />
-            </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowSettings(true)}>
               <Ionicons name="settings-outline" size={24} color="#C4A882" />
             </TouchableOpacity>
@@ -146,7 +120,7 @@ export default function PomodoroScreen() {
           </View>
         </View>
 
-        {/* Sessions Stats Card */}
+        {/* Statistiques des sessions */}
         <View style={styles.statsCard}>
           <View style={styles.statsHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -164,7 +138,7 @@ export default function PomodoroScreen() {
         </View>
       </ScrollView>
 
-      {/* SETTINGS MODAL */}
+      {/* MODAL DE RÉGLAGES */}
       <Modal visible={showSettings} animationType="fade" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -216,206 +190,34 @@ export default function PomodoroScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9F6F0',
-  },
-  scrollContent: {
-    padding: 20,
-    alignItems: 'center',
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 30,
-    width: '100%',
-    justifyContent: 'center',
-  },
-  tab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingVertical: 12,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#F0E6D2',
-    gap: 8,
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  timerCard: {
-    backgroundColor: '#fff',
-    width: '100%',
-    maxWidth: 380,
-    borderRadius: 30,
-    padding: 25,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#F0E6D2',
-    marginBottom: 20,
-    position: 'relative',
-  },
-  settingsIcon: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-  },
-  timerCircleOuter: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    borderWidth: 1,
-    borderColor: '#F0E6D2',
-    padding: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 25,
-  },
-  timerCircleInner: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 90,
-    borderWidth: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  timerText: {
-    fontSize: 42,
-    fontWeight: 'bold',
-    color: '#4A3728',
-    marginVertical: 4,
-  },
-  modeLabel: {
-    fontSize: 12,
-    color: '#8B735B',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  controlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 25,
-  },
-  mainControl: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#8BAF76',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  smallControl: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F9F6F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#F0E6D2',
-  },
-  statsCard: {
-    backgroundColor: '#fff',
-    width: '100%',
-    maxWidth: 380,
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#F0E6D2',
-    marginBottom: 20,
-  },
-  statsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  statsTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#4A3728',
-  },
-  statsCount: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#8BAF76',
-  },
-  progressBars: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  barBase: {
-    flex: 1,
-    height: 8,
-    backgroundColor: '#F2E8D5',
-    borderRadius: 4,
-  },
-  barFilled: {
-    backgroundColor: '#8BAF76',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    width: '85%',
-    borderRadius: 25,
-    padding: 25,
-    borderWidth: 1,
-    borderColor: '#F0E6D2',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 25,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#4A3728',
-  },
-  settingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  settingLabel: {
-    fontSize: 16,
-    color: '#8B735B',
-    fontWeight: '600',
-  },
-  settingInput: {
-    backgroundColor: '#F9F6F0',
-    width: 70,
-    height: 45,
-    borderRadius: 12,
-    textAlign: 'center',
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4A3728',
-    borderWidth: 1,
-    borderColor: '#F0E6D2',
-  },
-  saveButton: {
-    backgroundColor: '#8BAF76',
-    height: 50,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  container: { flex: 1, backgroundColor: '#F9F6F0' },
+  scrollContent: { padding: 20, alignItems: 'center', paddingTop: Platform.OS === 'ios' ? 60 : 40 },
+  tabsContainer: { flexDirection: 'row', gap: 12, marginBottom: 30, width: '100%', justifyContent: 'center' },
+  tab: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingVertical: 12, paddingHorizontal: 15, borderRadius: 20, borderWidth: 1.5, borderColor: '#F0E6D2', gap: 8 },
+  tabText: { fontSize: 14, fontWeight: 'bold' },
+  timerCard: { backgroundColor: '#fff', width: '100%', maxWidth: 380, borderRadius: 30, padding: 25, alignItems: 'center', borderWidth: 1, borderColor: '#F0E6D2', marginBottom: 20 },
+  settingsHeader: { width: '100%', alignItems: 'flex-end', marginBottom: 10 },
+  timerCircleOuter: { width: 200, height: 200, borderRadius: 100, borderWidth: 1, borderColor: '#F0E6D2', padding: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 25 },
+  timerCircleInner: { width: '100%', height: '100%', borderRadius: 90, borderWidth: 8, justifyContent: 'center', alignItems: 'center' },
+  timerText: { fontSize: 42, fontWeight: 'bold', color: '#4A3728', marginVertical: 4 },
+  modeLabel: { fontSize: 12, color: '#8B735B', fontWeight: '600', textTransform: 'uppercase' },
+  controlsRow: { flexDirection: 'row', alignItems: 'center', gap: 25 },
+  mainControl: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#8BAF76', justifyContent: 'center', alignItems: 'center' },
+  smallControl: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F9F6F0', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#F0E6D2' },
+  statsCard: { backgroundColor: '#fff', width: '100%', maxWidth: 380, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#F0E6D2', marginBottom: 20 },
+  statsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  statsTitle: { fontSize: 14, fontWeight: 'bold', color: '#4A3728' },
+  statsCount: { fontSize: 20, fontWeight: 'bold', color: '#8BAF76' },
+  progressBars: { flexDirection: 'row', gap: 8 },
+  barBase: { flex: 1, height: 8, backgroundColor: '#F2E8D5', borderRadius: 4 },
+  barFilled: { backgroundColor: '#8BAF76' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { backgroundColor: '#fff', width: '85%', borderRadius: 25, padding: 25, borderWidth: 1, borderColor: '#F0E6D2' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#4A3728' },
+  settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  settingLabel: { fontSize: 16, color: '#8B735B', fontWeight: '600' },
+  settingInput: { backgroundColor: '#F9F6F0', width: 70, height: 45, borderRadius: 12, textAlign: 'center', fontSize: 18, fontWeight: 'bold', color: '#4A3728', borderWidth: 1, borderColor: '#F0E6D2' },
+  saveButton: { backgroundColor: '#8BAF76', height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
+  saveButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
 });

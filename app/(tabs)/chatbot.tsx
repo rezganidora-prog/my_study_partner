@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useRef, useState, useEffect } from 'react';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View, Image } from 'react-native';
+import { useTheme, DarkColors, LightColors } from '../../context/ThemeContext';
 
 type Message = {
   id: string;
@@ -9,13 +10,20 @@ type Message = {
 };
 
 type ApiMessage = {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
 };
 
 export default function ChatbotScreen() {
+  const { isDark } = useTheme();
+  const theme = isDark ? DarkColors : LightColors;
+
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', text: "Hoo hoo ! 🦉 Je suis Hibou, ton assistant magique. Je peux t'aider à réviser tes grimoires ou répondre à tes questions d'étude. Que souhaites-tu explorer aujourd'hui ?", isBot: true }
+    { 
+      id: '1', 
+      text: "Bonjour ! Je suis Hibou, ton assistant d'étude dédié. 🦉 Je suis là pour t'aider à réviser tes cours, expliquer des concepts complexes ou organiser ton planning. Comment puis-je t'accompagner dans tes révisions aujourd'hui ?", 
+      isBot: true 
+    }
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -33,7 +41,7 @@ export default function ChatbotScreen() {
     setIsLoading(true);
 
     try {
-      const apiMessages: ApiMessage[] = updatedMessages.slice(-20).map(m => ({
+      const apiMessages: ApiMessage[] = updatedMessages.slice(-10).map(m => ({
         role: m.isBot ? 'assistant' : 'user',
         content: m.text,
       }));
@@ -43,15 +51,15 @@ export default function ChatbotScreen() {
         headers: {
           'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENROUTER_API_KEY}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': 'http://localhost:8081',
-          'X-Title': 'Study Partner',
+          'HTTP-Referer': 'https://studypartner.app',
+          'X-Title': 'Study Partner Pro',
         },
         body: JSON.stringify({
           model: 'openai/gpt-3.5-turbo',
           messages: [
             {
               role: 'system',
-              content: "Tu es un assistant pédagogique pour étudiants. Réponds toujours en français."
+              content: "Tu es Hibou, un assistant d'étude sérieux, bienveillant et expert en pédagogie. Ton objectif est d'aider les étudiants à comprendre leurs cours. Utilise un ton professionnel mais encourageant. Si on te demande d'expliquer un concept, utilise des analogies claires. Réponds toujours en français."
             },
             ...apiMessages
           ],
@@ -61,13 +69,14 @@ export default function ChatbotScreen() {
       if (!response.ok) throw new Error(`Erreur API: ${response.status}`);
 
       const data = await response.json();
-      const botText = data.choices?.[0]?.message?.content || "Je n'ai pas pu répondre. Réessaie !";
+      const botText = data.choices?.[0]?.message?.content || "Je n'ai pas pu générer de réponse. Pourrais-tu reformuler ta question ?";
 
       setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), text: botText, isBot: true }]);
-    } catch {
+    } catch (error) {
+      console.error(error);
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
-        text: 'Hoo... je rencontre des difficultés. Vérifie ta connexion et réessaie. 🦉',
+        text: 'Désolé, je rencontre une petite difficulté technique pour me connecter à mon cerveau IA. Vérifie ta connexion. 🦉',
         isBot: true,
       }]);
     } finally {
@@ -81,17 +90,22 @@ export default function ChatbotScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      <View style={styles.header}>
-        <View style={styles.avatarContainer}>
+      <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+        <View style={[styles.avatarContainer, { backgroundColor: isDark ? '#242424' : '#FDF6E3', borderColor: theme.border }]}>
           <Text style={{ fontSize: 30 }}>🦉</Text>
+          <View style={styles.onlineDot} />
         </View>
-        <View>
-          <Text style={styles.headerTitle}>Hibou</Text>
-          <Text style={styles.headerStatus}>✨ Assistant IA magique</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Hibou</Text>
+          <Text style={[styles.headerStatus, { color: theme.primary }]}>Assistant d'étude IA • En ligne</Text>
         </View>
+        <TouchableOpacity style={styles.headerAction}>
+          <Ionicons name="ellipsis-horizontal" size={24} color={theme.subtext} />
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -100,35 +114,51 @@ export default function ChatbotScreen() {
         keyExtractor={(item) => item.id}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         renderItem={({ item }) => (
-          <View style={[styles.messageBubble, item.isBot ? styles.botBubble : styles.userBubble]}>
-            {item.id === 'loading' ? (
-              <ActivityIndicator size="small" color="#8BAF76" />
-            ) : (
-              <Text style={[styles.messageText, !item.isBot && styles.userMessageText]}>
-                {item.text}
-              </Text>
-            )}
+          <View style={[
+            styles.messageWrapper, 
+            item.isBot ? { alignItems: 'flex-start' } : { alignItems: 'flex-end' }
+          ]}>
+            <View style={[
+              styles.messageBubble, 
+              item.isBot 
+                ? [styles.botBubble, { backgroundColor: theme.card, borderColor: theme.border }] 
+                : [styles.userBubble, { backgroundColor: theme.primary }]
+            ]}>
+              {item.id === 'loading' ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color={theme.primary} />
+                  <Text style={[styles.loadingText, { color: theme.subtext }]}>Hibou réfléchit...</Text>
+                </View>
+              ) : (
+                <Text style={[styles.messageText, { color: item.isBot ? theme.text : '#fff' }]}>
+                  {item.text}
+                </Text>
+              )}
+            </View>
+            <Text style={styles.timestamp}>
+              {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
           </View>
         )}
         contentContainerStyle={styles.messagesList}
       />
 
-      <View style={styles.inputWrapper}>
-        <View style={styles.inputContainer}>
+      <View style={[styles.inputWrapper, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
+        <View style={[styles.inputContainer, { backgroundColor: isDark ? '#242424' : '#F0F2F5', borderColor: theme.border }]}>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: theme.text }]}
             placeholder="Pose ta question à Hibou..."
-            placeholderTextColor="#C4A882"
+            placeholderTextColor={isDark ? '#555' : '#8E8E93'}
             value={inputText}
             onChangeText={setInputText}
             multiline
           />
           <TouchableOpacity
-            style={[styles.sendButton, isLoading && { opacity: 0.5 }]}
+            style={[styles.sendButton, { backgroundColor: theme.primary }, (isLoading || !inputText.trim()) && { opacity: 0.5 }]}
             onPress={sendMessage}
-            disabled={isLoading}
+            disabled={isLoading || !inputText.trim()}
           >
-            <Ionicons name="sparkles" size={20} color="#fff" />
+            <Ionicons name="send" size={18} color="#fff" />
           </TouchableOpacity>
         </View>
       </View>
@@ -137,112 +167,83 @@ export default function ChatbotScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9F6F0',
-  },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0E6D2',
-    gap: 15,
+    padding: 15,
+    paddingTop: Platform.OS === 'ios' ? 55 : 35,
+    borderBottomWidth: 0.5,
+    gap: 12,
   },
   avatarContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#FDF6E3',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E8D9C0',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4A3728',
+  onlineDot: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#4CD964',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
-  headerStatus: {
-    fontSize: 12,
-    color: '#8BAF76',
-    fontWeight: '600',
-  },
-  messagesList: {
-    padding: 20,
-    paddingBottom: 40,
-  },
+  headerTitle: { fontSize: 17, fontWeight: 'bold' },
+  headerStatus: { fontSize: 11, fontWeight: '600' },
+  headerAction: { padding: 5 },
+  messagesList: { padding: 15, paddingBottom: 30 },
+  messageWrapper: { marginBottom: 15, maxWidth: '85%' },
   messageBubble: {
-    maxWidth: '80%',
-    padding: 16,
+    padding: 12,
+    paddingHorizontal: 16,
     borderRadius: 20,
-    marginBottom: 16,
     minHeight: 40,
-    justifyContent: 'center',
   },
   botBubble: {
-    backgroundColor: '#fff',
     alignSelf: 'flex-start',
-    borderBottomLeftRadius: 5,
-    borderWidth: 1,
-    borderColor: '#F0E6D2',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 5,
+    borderBottomLeftRadius: 4,
+    borderWidth: 0.5,
   },
   userBubble: {
-    backgroundColor: '#8BAF76',
     alignSelf: 'flex-end',
-    borderBottomRightRadius: 5,
-    shadowColor: '#8BAF76',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    borderBottomRightRadius: 4,
   },
-  messageText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#4A3728',
-  },
-  userMessageText: {
-    color: '#fff',
-    fontWeight: '500',
-  },
+  messageText: { fontSize: 15, lineHeight: 21 },
+  timestamp: { fontSize: 10, color: '#8E8E93', marginTop: 4, marginHorizontal: 5 },
+  loadingContainer: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  loadingText: { fontSize: 13, fontStyle: 'italic' },
   inputWrapper: {
-    padding: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#F0E6D2',
+    padding: 12,
+    paddingBottom: Platform.OS === 'ios' ? 35 : 15,
+    borderTopWidth: 0.5,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FDF6E3',
-    borderRadius: 15,
+    borderRadius: 22,
     paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: '#E8D9C0',
+    borderWidth: 0.5,
   },
   input: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    fontSize: 15,
-    color: '#4A3728',
+    paddingVertical: 10,
+    paddingHorizontal: 5,
+    fontSize: 16,
     maxHeight: 100,
   },
   sendButton: {
-    backgroundColor: '#8BAF76',
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 10,
+    marginLeft: 8,
   },
 });

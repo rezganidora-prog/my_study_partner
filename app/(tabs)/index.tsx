@@ -49,10 +49,10 @@ export default function Dashboard() {
   };
 
   const actions = [
-    { id: 'pomodoro', title: 'Focus', icon: 'timer-outline', color: '#FFD1D1', route: '/pomodoro' },
-    { id: 'courses', title: 'Grimoires', icon: 'book-outline', color: '#D1E8FF', route: '/courses' },
-    { id: 'quiz', title: 'Défis', icon: 'ribbon-outline', color: '#D1FFD1', route: '/quiz' },
-    { id: 'chatbot', title: 'Hibou IA', icon: 'help-circle-outline', color: '#FFF4D1', route: '/chatbot' },
+    { id: 'focus', title: 'Mode Focus', icon: 'eye-off-outline', color: '#D1FFD7', route: '/focus' },
+    { id: 'pomodoro', title: 'Pomodoro', icon: 'timer-outline', color: '#FFD1D1', route: '/pomodoro' },
+    { id: 'courses', title: 'Mes Cours', icon: 'book-outline', color: '#D1E8FF', route: '/courses' },
+    { id: 'chatbot', title: 'Assistant IA', icon: 'headset-outline', color: '#FFF4D1', route: '/chatbot' },
   ];
 
   if (loading) {

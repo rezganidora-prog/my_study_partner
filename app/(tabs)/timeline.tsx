@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Platform, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 
@@ -11,6 +11,8 @@ export default function TimelineScreen() {
   const [duration, setDuration] = useState('60');
   const [stats, setStats] = useState({ study_hours: 0, streak: 0 });
   const [tasks, setTasks] = useState<any[]>([]);
+  const [editingTask, setEditingTask] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetchStats();
@@ -34,17 +36,75 @@ export default function TimelineScreen() {
     if (data) setTasks(data);
   };
 
-  const handleAddSession = async () => {
+  const handleSaveSession = async () => {
     if (!sessionTitle || !selectedDay) return;
+    setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
+    
     const taskDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDay).toISOString().split('T')[0];
-    const { error } = await supabase.from('tasks').insert({
-      user_id: user.id, title: sessionTitle, duration: parseInt(duration), date: taskDate, category: 'Mathématiques'
-    });
-    if (!error) {
-      setSessionTitle(''); setDuration('60'); setShowAddModal(false); fetchTasks();
+    
+    if (editingTask) {
+      // Mise à jour
+      const { error } = await supabase.from('tasks').update({
+        title: sessionTitle, 
+        duration: parseInt(duration), 
+        date: taskDate
+      }).eq('id', editingTask.id);
+      
+      if (!error) {
+        Alert.alert('Succès', 'Tâche mise à jour ! ✨');
+      }
+    } else {
+      // Nouvel ajout
+      const { error } = await supabase.from('tasks').insert({
+        user_id: user.id, 
+        title: sessionTitle, 
+        duration: parseInt(duration), 
+        date: taskDate, 
+        category: 'Mathématiques'
+      });
+      
+      if (!error) {
+        Alert.alert('Succès', 'Tâche ajoutée ! 🌱');
+      }
     }
+    
+    resetForm();
+    fetchTasks();
+    setLoading(false);
+  };
+
+  const handleDeleteTask = (id: string) => {
+    Alert.alert(
+      'Supprimer la tâche ?',
+      'Cette action est irréversible.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { 
+          text: 'Supprimer', 
+          style: 'destructive', 
+          onPress: async () => {
+            const { error } = await supabase.from('tasks').delete().eq('id', id);
+            if (!error) fetchTasks();
+          } 
+        },
+      ]
+    );
+  };
+
+  const openEditModal = (task: any) => {
+    setEditingTask(task);
+    setSessionTitle(task.title);
+    setDuration(task.duration.toString());
+    setShowAddModal(true);
+  };
+
+  const resetForm = () => {
+    setSessionTitle('');
+    setDuration('60');
+    setEditingTask(null);
+    setShowAddModal(false);
   };
 
   const year = currentDate.getFullYear();
@@ -63,7 +123,7 @@ export default function TimelineScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <View style={styles.header}>
         <Text style={styles.title}>Ma Timeline 🗓️</Text>
-        <Text style={styles.subtitle}>{"Visualise et planifie ton succès"}</Text>
+        <Text style={styles.subtitle}>Gère ton temps comme un expert</Text>
       </View>
 
       <View style={styles.statsContainer}>
@@ -79,7 +139,6 @@ export default function TimelineScreen() {
         </View>
       </View>
 
-      {/* Large Calendar Grid */}
       <View style={styles.calendarCard}>
         <View style={styles.calendarHeader}>
           <TouchableOpacity onPress={() => setCurrentDate(new Date(year, month - 1, 1))}><Ionicons name="chevron-back" size={24} color="#8B735B" /></TouchableOpacity>
@@ -103,7 +162,6 @@ export default function TimelineScreen() {
                 key={day} 
                 style={[styles.dayCell, selectedDay === day && styles.selectedDayCell, isToday && styles.todayCell]} 
                 onPress={() => setSelectedDay(day)}
-                onLongPress={() => { setSelectedDay(day); setShowAddModal(true); }}
               >
                 <Text style={[styles.dayNumber, selectedDay === day && styles.selectedDayText]}>{day}</Text>
                 <View style={styles.taskContainer}>
@@ -118,25 +176,28 @@ export default function TimelineScreen() {
         </View>
       </View>
 
-      {/* Tasks List for Selected Day */}
       {selectedDay && (
         <View style={styles.dailyTasksSection}>
           <View style={styles.dailyHeader}>
-            <Text style={styles.dailyTitle}>Tâches du {selectedDay} {monthName}</Text>
-            <TouchableOpacity style={styles.addSmallBtn} onPress={() => setShowAddModal(true)}>
+            <Text style={styles.dailyTitle}>Sessions du {selectedDay} {monthName}</Text>
+            <TouchableOpacity style={styles.addSmallBtn} onPress={() => { resetForm(); setShowAddModal(true); }}>
               <Ionicons name="add" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
           
           {getTasksForDay(selectedDay).length > 0 ? (
-            getTasksForDay(selectedDay).map((t, idx) => (
-              <View key={idx} style={styles.taskItem}>
-                <View style={styles.taskIconBox}><Ionicons name="book" size={18} color="#8BAF76" /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.taskItemTitle}>{t.title}</Text>
-                  <Text style={styles.taskItemSub}>{t.category} • {t.duration} min</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color="#C4A882" />
+            getTasksForDay(selectedDay).map((t) => (
+              <View key={t.id} style={styles.taskItem}>
+                <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }} onPress={() => openEditModal(t)}>
+                  <View style={styles.taskIconBox}><Ionicons name="book" size={18} color="#8BAF76" /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.taskItemTitle}>{t.title}</Text>
+                    <Text style={styles.taskItemSub}>{t.category} • {t.duration} min</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleDeleteTask(t.id)} style={styles.deleteBtn}>
+                  <Ionicons name="trash-outline" size={20} color="#D48C8C" />
+                </TouchableOpacity>
               </View>
             ))
           ) : (
@@ -145,24 +206,34 @@ export default function TimelineScreen() {
         </View>
       )}
 
-      {/* Modal - Kept exact format from photo */}
-      <Modal visible={showAddModal} animationType="fade" transparent={true}>
+      <Modal visible={showAddModal} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <View>
-                <Text style={styles.modalDateTitle}>{selectedDay} {monthName} {year}</Text>
-                <Text style={styles.modalDateSub}>{getTasksForDay(selectedDay || 1).length} session(s) d'étude</Text>
+                <Text style={styles.modalDateTitle}>{editingTask ? 'Modifier la session' : 'Nouvelle session'}</Text>
+                <Text style={styles.modalDateSub}>{selectedDay} {monthName} {year}</Text>
               </View>
-              <TouchableOpacity onPress={() => setShowAddModal(false)} style={styles.closeBtn}><Ionicons name="close" size={20} color="#4A3728" /></TouchableOpacity>
+              <TouchableOpacity onPress={resetForm} style={styles.closeBtn}><Ionicons name="close" size={20} color="#4A3728" /></TouchableOpacity>
             </View>
             <View style={styles.formContent}>
-              <View style={styles.inputGroup}><TextInput style={styles.textInput} placeholder="Titre de la session..." placeholderTextColor="#C4A882" value={sessionTitle} onChangeText={setSessionTitle} /></View>
+              <TextInput 
+                style={styles.textInput} 
+                placeholder="Titre (ex: Révision Algèbre)" 
+                placeholderTextColor="#C4A882" 
+                value={sessionTitle} 
+                onChangeText={setSessionTitle} 
+              />
               <View style={styles.pickerFake}><Text style={styles.pickerText}>Mathématiques</Text><Ionicons name="chevron-down" size={16} color="#8B735B" /></View>
-              <View style={styles.durationRow}><Text style={styles.durationLabel}>Durée (min) :</Text><TextInput style={styles.durationInput} value={duration} onChangeText={setDuration} keyboardType="numeric" /></View>
+              <View style={styles.durationRow}>
+                <Text style={styles.durationLabel}>Durée (minutes) :</Text>
+                <TextInput style={styles.durationInput} value={duration} onChangeText={setDuration} keyboardType="numeric" />
+              </View>
               <View style={styles.modalButtons}>
-                <TouchableOpacity style={styles.addBtn} onPress={handleAddSession}><Text style={styles.addBtnText}>Ajouter</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowAddModal(false)}><Text style={styles.cancelBtnText}>Annuler</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.addBtn} onPress={handleSaveSession} disabled={loading}>
+                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.addBtnText}>{editingTask ? 'Mettre à jour' : 'Ajouter'}</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.cancelBtn} onPress={resetForm}><Text style={styles.cancelBtnText}>Annuler</Text></TouchableOpacity>
               </View>
             </View>
           </View>
@@ -174,7 +245,7 @@ export default function TimelineScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9F6F0' },
-  scrollContent: { padding: 16, paddingTop: 40 },
+  scrollContent: { padding: 16, paddingTop: 40, paddingBottom: 40 },
   header: { marginBottom: 20 },
   title: { fontSize: 26, fontWeight: 'bold', color: '#4A3728' },
   subtitle: { fontSize: 13, color: '#8B735B' },
@@ -183,7 +254,6 @@ const styles = StyleSheet.create({
   statIcon: { fontSize: 20, marginBottom: 4 },
   statValue: { fontSize: 18, fontWeight: 'bold', color: '#4A3728' },
   statLabel: { fontSize: 10, color: '#8B735B' },
-  
   calendarCard: { backgroundColor: '#fff', borderRadius: 20, padding: 12, borderWidth: 1, borderColor: '#F0E6D2', marginBottom: 20 },
   calendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   monthText: { fontSize: 18, fontWeight: 'bold', color: '#4A3728' },
@@ -198,7 +268,6 @@ const styles = StyleSheet.create({
   taskContainer: { width: '100%', alignItems: 'center', marginTop: 2, gap: 2 },
   taskMiniBar: { width: '80%', height: 3, borderRadius: 2 },
   moreText: { fontSize: 8, color: '#C4A882', fontWeight: 'bold' },
-
   dailyTasksSection: { backgroundColor: '#fff', borderRadius: 20, padding: 16, borderWidth: 1, borderColor: '#F0E6D2' },
   dailyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   dailyTitle: { fontSize: 15, fontWeight: 'bold', color: '#4A3728' },
@@ -207,8 +276,8 @@ const styles = StyleSheet.create({
   taskIconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   taskItemTitle: { fontSize: 14, fontWeight: 'bold', color: '#4A3728' },
   taskItemSub: { fontSize: 11, color: '#8B735B' },
+  deleteBtn: { padding: 5 },
   noTasksText: { textAlign: 'center', color: '#C4A882', fontStyle: 'italic', padding: 10 },
-
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: '#FEF9F0', width: '90%', maxWidth: 400, borderRadius: 24, overflow: 'hidden' },
   modalHeader: { backgroundColor: '#FAF3E3', padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -216,10 +285,10 @@ const styles = StyleSheet.create({
   modalDateSub: { fontSize: 12, color: '#8B735B' },
   closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' },
   formContent: { padding: 20 },
-  textInput: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#8BAF76', borderRadius: 12, padding: 12, color: '#4A3728' },
+  textInput: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#8BAF76', borderRadius: 12, padding: 12, color: '#4A3728', marginBottom: 15 },
   pickerFake: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#E8D9C0', borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
   pickerText: { flex: 1, color: '#4A3728', fontSize: 14 },
-  durationRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
+  durationRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 25 },
   durationLabel: { fontSize: 14, color: '#4A3728' },
   durationInput: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#E8D9C0', borderRadius: 10, padding: 8, width: 60, textAlign: 'center', fontWeight: 'bold' },
   modalButtons: { flexDirection: 'row', gap: 10 },
