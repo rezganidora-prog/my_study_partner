@@ -1,24 +1,50 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
-
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+import { useEffect, useState } from 'react'
+import { Stack, useRouter, useSegments } from 'expo-router'
+import { StatusBar } from 'expo-status-bar'
+import { View, ActivityIndicator } from 'react-native'
+import { supabase } from '@/lib/supabase'
+import type { Session } from '@supabase/supabase-js'
+import { Colors } from '@/constants/GhibliTheme'
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
+  const segments = useSegments()
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setLoading(false)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (loading) return
+    const inAuthGroup = segments[0] === ('(auth)' as any)
+    if (!session && !inAuthGroup) {
+      router.replace('/(auth)/login' as any)
+    } else if (session && inAuthGroup) {
+      router.replace('/(tabs)' as any)
+    }
+  }, [session, loading, segments])
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.beige }}>
+        <ActivityIndicator size="large" color={Colors.green} />
+      </View>
+    )
+  }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
-  );
+    <>
+      <StatusBar style="dark" backgroundColor={Colors.beige} />
+      <Stack screenOptions={{ headerShown: false }} />
+    </>
+  )
 }
