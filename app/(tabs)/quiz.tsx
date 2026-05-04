@@ -1,70 +1,100 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Dimensions, ActivityIndicator } from 'react-native';
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  Platform, ActivityIndicator, Alert,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 
-const { width } = Dimensions.get('window');
+type Course = {
+  id: string;
+  title: string;
+  subject: string;
+};
 
 type QuizQuestion = {
   question: string;
   options: string[];
-  correct: number;
+  correct_index: number;
 };
 
-const FALLBACK_QUESTIONS: QuizQuestion[] = [
-  {
-    question: "Quelle est la durée classique d'une session de focus dans la méthode Pomodoro ?",
-    options: ["15 minutes", "25 minutes", "45 minutes", "1 heure"],
-    correct: 1,
-  },
-  {
-    question: "Que signifie le mode 'Grande Pause' dans l'étude ?",
-    options: ["Arrêter d'étudier pour la journée", "Une pause de 15-30 min après 4 sessions", "Dormir 2 heures", "Regarder un film"],
-    correct: 1,
-  },
-  {
-    question: "Quel outil est le plus efficace pour mémoriser sur le long terme ?",
-    options: ["Lire son cours 10 fois", "L'auto-évaluation (Quiz)", "Surligner tout le texte", "Écouter de la musique"],
-    correct: 1,
-  },
-];
+type Screen = 'select_course' | 'generating' | 'quiz' | 'result';
 
 export default function QuizScreen() {
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(true);
+  const [screen, setScreen] = useState<Screen>('select_course');
+  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
-  const [loadingQuestions, setLoadingQuestions] = useState(true);
-  const [quizStarted, setQuizStarted] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [score, setScore] = useState(0);
-  const [showResult, setShowResult] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [answered, setAnswered] = useState(false);
 
   useEffect(() => {
-    fetchQuestions();
+    fetchCourses();
   }, []);
 
-  const fetchQuestions = async () => {
+  const fetchCourses = async () => {
     try {
-      const { data, error } = await supabase
-        .from('quiz_questions')
-        .select('question, options, correct_index')
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-
-      if (data && data.length > 0) {
-        setQuestions(data.map(row => ({
-          question: row.question,
-          options: row.options as string[],
-          correct: row.correct_index,
-        })));
-      } else {
-        setQuestions(FALLBACK_QUESTIONS);
-      }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from('courses')
+        .select('id, title, subject')
+        .eq('user_id', user.id);
+      if (data) setCourses(data);
     } catch {
-      setQuestions(FALLBACK_QUESTIONS);
+      // silent
     } finally {
-      setLoadingQuestions(false);
+      setLoadingCourses(false);
+    }
+  };
+
+  const generateQuiz = async (course: Course) => {
+    setSelectedCourse(course);
+    setScreen('generating');
+
+    try {
+      const prompt =
+        `Génère 5 questions QCM en français sur ce cours : ${course.title} - ${course.subject}.\n` +
+        `Retourne UNIQUEMENT un JSON valide, sans texte avant ou après, comme ceci :\n` +
+        `[{ "question": "...", "options": ["A","B","C","D"], "correct_index": 0 }]`;
+
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'http://localhost:8081',
+          'X-Title': 'Study Partner',
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-3.5-turbo',
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+
+      if (!response.ok) throw new Error(`Erreur API: ${response.status}`);
+
+      const data = await response.json();
+      const rawText: string = data.choices?.[0]?.message?.content || '';
+
+      // Strip potential markdown code blocks
+      const jsonText = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed: QuizQuestion[] = JSON.parse(jsonText);
+
+      if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Format invalide');
+
+      setQuestions(parsed);
+      setCurrentQuestion(0);
+      setScore(0);
+      setSelectedAnswer(null);
+      setAnswered(false);
+      setScreen('quiz');
+    } catch {
+      Alert.alert('Erreur', 'Impossible de générer les questions. Réessaie.');
+      setScreen('select_course');
     }
   };
 
@@ -73,7 +103,7 @@ export default function QuizScreen() {
     setSelectedAnswer(index);
     setAnswered(true);
 
-    if (index === questions[currentQuestion].correct) {
+    if (index === questions[currentQuestion].correct_index) {
       setScore(prev => prev + 1);
     }
 
@@ -83,93 +113,128 @@ export default function QuizScreen() {
         setSelectedAnswer(null);
         setAnswered(false);
       } else {
-        setShowResult(true);
+        setScreen('result');
       }
-    }, 900);
+    }, 1000);
   };
 
   const resetQuiz = () => {
-    setQuizStarted(false);
+    setScreen('select_course');
+    setSelectedCourse(null);
+    setQuestions([]);
     setCurrentQuestion(0);
     setScore(0);
-    setShowResult(false);
     setSelectedAnswer(null);
     setAnswered(false);
   };
 
-  if (loadingQuestions) {
+  // ── Écran : sélection du cours ───────────────────────────────────────────
+  if (screen === 'select_course') {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#8BAF76" />
-        <Text style={{ marginTop: 15, color: '#8B735B' }}>Chargement des questions...</Text>
-      </View>
-    );
-  }
-
-  if (!quizStarted) {
-    return (
-      <View style={styles.container}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Text style={styles.title}>Défis de Magie 🏆</Text>
-          <Text style={styles.subtitle}>Teste tes connaissances et progresse !</Text>
+          <Text style={styles.subtitle}>Choisis un cours pour générer ton quiz</Text>
         </View>
 
-        <View style={styles.introCard}>
-          <View style={styles.iconCircle}>
-            <Ionicons name="ribbon-outline" size={40} color="#8BAF76" />
+        {loadingCourses ? (
+          <ActivityIndicator size="large" color="#8BAF76" style={{ marginTop: 50 }} />
+        ) : courses.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyEmoji}>📚</Text>
+            <Text style={styles.emptyTitle}>Aucun cours trouvé</Text>
+            <Text style={styles.emptyText}>
+              Ajoute d'abord des cours dans ta bibliothèque pour générer un quiz.
+            </Text>
           </View>
-          <Text style={styles.introTitle}>Prêt pour le défi ?</Text>
-          <Text style={styles.introText}>
-            {"Réponds aux questions pour valider tes sessions d'étude et gagner des points d'expérience."}
-          </Text>
-
-          <View style={styles.levelsRow}>
-            <View style={styles.levelBadge}>
-              <Text style={styles.levelText}>{questions.length} questions</Text>
-            </View>
-            <View style={[styles.levelBadge, { backgroundColor: '#FDF6E3' }]}>
-              <Text style={[styles.levelText, { color: '#C4A882' }]}>QCM</Text>
-            </View>
+        ) : (
+          <View style={styles.coursesList}>
+            {courses.map(course => (
+              <TouchableOpacity
+                key={course.id}
+                style={styles.courseCard}
+                onPress={() => generateQuiz(course)}
+              >
+                <View style={styles.courseIconBox}>
+                  <Ionicons name="journal" size={24} color="#8BAF76" />
+                </View>
+                <View style={{ flex: 1, marginLeft: 15 }}>
+                  <Text style={styles.courseTitle} numberOfLines={1}>{course.title}</Text>
+                  <Text style={styles.courseSubject}>{course.subject}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#C4A882" />
+              </TouchableOpacity>
+            ))}
           </View>
+        )}
+      </ScrollView>
+    );
+  }
 
-          <TouchableOpacity style={styles.startBtn} onPress={() => setQuizStarted(true)}>
-            <Text style={styles.startBtnText}>Commencer le Quiz</Text>
-            <Ionicons name="arrow-forward" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
+  // ── Écran : génération en cours ──────────────────────────────────────────
+  if (screen === 'generating') {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color="#8BAF76" />
+        <Text style={styles.generatingTitle}>Génération du quiz... ✨</Text>
+        <Text style={styles.generatingSubtitle}>L'IA prépare 5 questions sur</Text>
+        <Text style={styles.generatingCourse}>"{selectedCourse?.title}"</Text>
       </View>
     );
   }
 
-  if (showResult) {
+  // ── Écran : résultat ─────────────────────────────────────────────────────
+  if (screen === 'result') {
+    const perfect = score === questions.length;
+    const good = score >= Math.ceil(questions.length / 2);
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, styles.resultContainer]}>
         <View style={styles.resultCard}>
-          <Text style={styles.resultEmoji}>{score === questions.length ? "✨🧙‍♂️" : "🌱"}</Text>
+          <Text style={styles.resultEmoji}>
+            {perfect ? '✨🧙‍♂️' : good ? '🌱' : '📖'}
+          </Text>
           <Text style={styles.resultTitle}>Défi Terminé !</Text>
+          <Text style={styles.resultCourse}>{selectedCourse?.title}</Text>
           <Text style={styles.resultScore}>{score} / {questions.length}</Text>
           <Text style={styles.resultMsg}>
-            {score === questions.length
-              ? "Félicitations, tu es un véritable maître de l'étude !"
-              : "Continue tes efforts, la connaissance fleurit avec le temps."}
+            {perfect
+              ? 'Félicitations, tu maîtrises parfaitement ce cours !'
+              : good
+              ? 'Bon travail ! Continue à réviser pour progresser.'
+              : 'La connaissance fleurit avec le temps. Révise et réessaie !'}
           </Text>
 
-          <TouchableOpacity style={styles.startBtn} onPress={resetQuiz}>
-            <Text style={styles.startBtnText}>Retour à l'accueil</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => generateQuiz(selectedCourse!)}>
+            <Ionicons name="refresh" size={20} color="#fff" />
+            <Text style={styles.retryBtnText}>Rejouer ce cours</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.backBtn} onPress={resetQuiz}>
+            <Text style={styles.backBtnText}>Choisir un autre cours</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
+  // ── Écran : question en cours ────────────────────────────────────────────
   const q = questions[currentQuestion];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, styles.quizContainer]}>
       <View style={styles.progressHeader}>
-        <Text style={styles.progressText}>Question {currentQuestion + 1} / {questions.length}</Text>
+        <Text style={styles.progressCourse} numberOfLines={1}>{selectedCourse?.title}</Text>
+        <View style={styles.progressRow}>
+          <Text style={styles.progressText}>
+            Question {currentQuestion + 1} / {questions.length}
+          </Text>
+          <View style={styles.scoreChip}>
+            <Ionicons name="star" size={12} color="#C4A882" />
+            <Text style={styles.scoreChipText}>{score} pts</Text>
+          </View>
+        </View>
         <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: `${((currentQuestion + 1) / questions.length) * 100}%` }]} />
+          <View style={[styles.progressFill, { width: `${(currentQuestion / questions.length) * 100}%` }]} />
         </View>
       </View>
 
@@ -179,21 +244,46 @@ export default function QuizScreen() {
 
       <View style={styles.optionsContainer}>
         {q.options.map((option, idx) => {
-          let btnStyle = styles.optionBtn;
-          let letterStyle = styles.optionLetter;
-          if (answered && idx === q.correct) {
-            btnStyle = { ...styles.optionBtn, backgroundColor: '#E8F5E9', borderColor: '#8BAF76' };
-            letterStyle = { ...styles.optionLetter, backgroundColor: '#8BAF76' };
-          } else if (answered && idx === selectedAnswer && idx !== q.correct) {
-            btnStyle = { ...styles.optionBtn, backgroundColor: '#FFEBEE', borderColor: '#D48C8C' };
-            letterStyle = { ...styles.optionLetter, backgroundColor: '#D48C8C' };
+          const isCorrect = idx === q.correct_index;
+          const isSelected = idx === selectedAnswer;
+
+          let bgColor = '#fff';
+          let borderColor = '#F0E6D2';
+          let letterBg = '#FDF6E3';
+          let letterColor = '#8BAF76';
+
+          if (answered) {
+            if (isCorrect) {
+              bgColor = '#E8F5E9';
+              borderColor = '#8BAF76';
+              letterBg = '#8BAF76';
+              letterColor = '#fff';
+            } else if (isSelected) {
+              bgColor = '#FFEBEE';
+              borderColor = '#D48C8C';
+              letterBg = '#D48C8C';
+              letterColor = '#fff';
+            }
           }
+
           return (
-            <TouchableOpacity key={idx} style={btnStyle} onPress={() => handleAnswer(idx)} disabled={answered}>
-              <View style={letterStyle}>
-                <Text style={[styles.letterText, answered && (idx === q.correct || idx === selectedAnswer) && { color: '#fff' }]}>
-                  {String.fromCharCode(65 + idx)}
-                </Text>
+            <TouchableOpacity
+              key={idx}
+              style={[styles.optionBtn, { backgroundColor: bgColor, borderColor }]}
+              onPress={() => handleAnswer(idx)}
+              disabled={answered}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.optionLetter, { backgroundColor: letterBg }]}>
+                {answered && isCorrect ? (
+                  <Ionicons name="checkmark" size={16} color="#fff" />
+                ) : answered && isSelected && !isCorrect ? (
+                  <Ionicons name="close" size={16} color="#fff" />
+                ) : (
+                  <Text style={[styles.letterText, { color: letterColor }]}>
+                    {String.fromCharCode(65 + idx)}
+                  </Text>
+                )}
               </View>
               <Text style={styles.optionLabel}>{option}</Text>
             </TouchableOpacity>
@@ -205,38 +295,91 @@ export default function QuizScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9F6F0', padding: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40 },
-  header: { alignItems: 'center', marginBottom: 40 },
-  title: { fontSize: 28, fontWeight: 'bold', color: '#4A3728', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
-  subtitle: { fontSize: 14, color: '#8BAF76', fontWeight: '600' },
+  container: { flex: 1, backgroundColor: '#F9F6F0' },
+  scrollContent: { padding: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 40 },
+  centered: { justifyContent: 'center', alignItems: 'center', padding: 20 },
+  quizContainer: { padding: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40 },
+  resultContainer: { padding: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40 },
 
-  introCard: { backgroundColor: '#fff', borderRadius: 30, padding: 30, alignItems: 'center', borderWidth: 1, borderColor: '#F0E6D2', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 5 },
-  iconCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#E8F5E9', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  introTitle: { fontSize: 22, fontWeight: 'bold', color: '#4A3728', marginBottom: 10 },
-  introText: { textAlign: 'center', color: '#8B735B', lineHeight: 22, marginBottom: 25 },
-  levelsRow: { flexDirection: 'row', gap: 10, marginBottom: 30 },
-  levelBadge: { backgroundColor: '#8BAF76', paddingVertical: 6, paddingHorizontal: 15, borderRadius: 12 },
-  levelText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-  startBtn: { backgroundColor: '#8BAF76', height: 55, width: '100%', borderRadius: 15, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
-  startBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  header: { marginBottom: 30 },
+  title: {
+    fontSize: 28, fontWeight: 'bold', color: '#4A3728',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  subtitle: { fontSize: 14, color: '#8BAF76', fontWeight: '600', marginTop: 4 },
 
-  progressHeader: { marginBottom: 30 },
-  progressText: { fontSize: 14, fontWeight: 'bold', color: '#8B735B', marginBottom: 10 },
+  emptyCard: {
+    backgroundColor: '#fff', borderRadius: 24, padding: 35,
+    alignItems: 'center', borderWidth: 1, borderColor: '#F0E6D2',
+  },
+  emptyEmoji: { fontSize: 48, marginBottom: 15 },
+  emptyTitle: { fontSize: 18, fontWeight: 'bold', color: '#4A3728', marginBottom: 10 },
+  emptyText: { textAlign: 'center', color: '#8B735B', lineHeight: 22 },
+
+  coursesList: { gap: 12 },
+  courseCard: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+    borderRadius: 20, padding: 16, borderWidth: 1, borderColor: '#F0E6D2',
+  },
+  courseIconBox: {
+    width: 48, height: 48, borderRadius: 14,
+    backgroundColor: '#FDF6E3', justifyContent: 'center', alignItems: 'center',
+  },
+  courseTitle: { fontSize: 15, fontWeight: 'bold', color: '#4A3728' },
+  courseSubject: { fontSize: 12, color: '#8BAF76', marginTop: 3 },
+
+  generatingTitle: { fontSize: 20, fontWeight: 'bold', color: '#4A3728', marginTop: 25 },
+  generatingSubtitle: { fontSize: 14, color: '#8B735B', marginTop: 10 },
+  generatingCourse: {
+    fontSize: 15, fontWeight: '600', color: '#8BAF76',
+    marginTop: 6, textAlign: 'center', paddingHorizontal: 30,
+  },
+
+  progressHeader: { marginBottom: 20 },
+  progressCourse: { fontSize: 12, fontWeight: '600', color: '#8BAF76', marginBottom: 6 },
+  progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  progressText: { fontSize: 14, fontWeight: 'bold', color: '#8B735B' },
+  scoreChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#FDF6E3', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 20,
+  },
+  scoreChipText: { fontSize: 12, color: '#C4A882', fontWeight: '600' },
   progressBar: { height: 8, backgroundColor: '#E8D9C0', borderRadius: 4, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: '#8BAF76' },
 
-  questionCard: { backgroundColor: '#fff', borderRadius: 24, padding: 25, marginBottom: 20, borderWidth: 1, borderColor: '#F0E6D2' },
-  questionText: { fontSize: 18, fontWeight: 'bold', color: '#4A3728', lineHeight: 26 },
+  questionCard: {
+    backgroundColor: '#fff', borderRadius: 24, padding: 25,
+    marginBottom: 20, borderWidth: 1, borderColor: '#F0E6D2',
+  },
+  questionText: { fontSize: 17, fontWeight: 'bold', color: '#4A3728', lineHeight: 26 },
 
-  optionsContainer: { gap: 12 },
-  optionBtn: { backgroundColor: '#fff', borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#F0E6D2' },
-  optionLetter: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#FDF6E3', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  letterText: { fontWeight: 'bold', color: '#8BAF76' },
-  optionLabel: { fontSize: 15, color: '#4A3728', flex: 1 },
+  optionsContainer: { gap: 10 },
+  optionBtn: { borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1.5 },
+  optionLetter: {
+    width: 32, height: 32, borderRadius: 16,
+    justifyContent: 'center', alignItems: 'center', marginRight: 14,
+  },
+  letterText: { fontWeight: 'bold', fontSize: 14 },
+  optionLabel: { fontSize: 14, color: '#4A3728', flex: 1, lineHeight: 20 },
 
-  resultCard: { backgroundColor: '#fff', borderRadius: 30, padding: 40, alignItems: 'center', borderWidth: 1, borderColor: '#F0E6D2' },
+  resultCard: {
+    backgroundColor: '#fff', borderRadius: 30, padding: 35,
+    alignItems: 'center', borderWidth: 1, borderColor: '#F0E6D2',
+  },
   resultEmoji: { fontSize: 60, marginBottom: 10 },
   resultTitle: { fontSize: 24, fontWeight: 'bold', color: '#4A3728', marginBottom: 5 },
-  resultScore: { fontSize: 40, fontWeight: 'bold', color: '#8BAF76', marginBottom: 15 },
+  resultCourse: { fontSize: 13, color: '#8BAF76', fontWeight: '600', marginBottom: 15 },
+  resultScore: { fontSize: 48, fontWeight: 'bold', color: '#8BAF76', marginBottom: 10 },
   resultMsg: { textAlign: 'center', color: '#8B735B', lineHeight: 22, marginBottom: 30 },
+  retryBtn: {
+    backgroundColor: '#8BAF76', height: 52, width: '100%', borderRadius: 15,
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10, marginBottom: 12,
+  },
+  retryBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  backBtn: {
+    height: 48, width: '100%', borderRadius: 15,
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: '#E8D9C0',
+  },
+  backBtnText: { color: '#8B735B', fontSize: 15, fontWeight: '600' },
 });
