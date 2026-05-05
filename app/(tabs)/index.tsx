@@ -17,8 +17,8 @@ export default function Dashboard() {
     streak: 0,
     hours: 0,
     courses: 0,
-    xp: 1250,
-    level: 5
+    xp: 0,
+    level: 1
   });
 
   useEffect(() => {
@@ -40,6 +40,8 @@ export default function Dashboard() {
         streak: profile?.streak || 0,
         hours: profile?.study_hours || 0,
         courses: courseCount || 0,
+        xp: profile?.xp || 0,
+        level: profile?.level || 1,
       }));
     } catch (error) {
       console.log('Error fetching stats:', error);

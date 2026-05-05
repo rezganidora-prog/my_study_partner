@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     goals text,
     subjects text,
     streak integer DEFAULT 0,
-    study_hours integer DEFAULT 0
+    study_hours integer DEFAULT 0,
+    xp integer DEFAULT 0,
+    level integer DEFAULT 1
 );
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -125,3 +127,40 @@ FOR SELECT USING (bucket_id = 'avatars');
 
 CREATE POLICY "Users can upload own avatar" ON storage.objects
 FOR INSERT WITH CHECK (bucket_id = 'avatars' AND auth.role() = 'authenticated');
+
+-- 8. Table des tâches (Timeline / Planning)
+CREATE TABLE IF NOT EXISTS public.tasks (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at timestamptz DEFAULT timezone('utc'::text, now()),
+    user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    title text NOT NULL,
+    date date NOT NULL,
+    duration integer DEFAULT 60,
+    category text DEFAULT 'Mathématiques',
+    completed boolean DEFAULT false
+);
+
+ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can manage their tasks" ON public.tasks;
+CREATE POLICY "Users can manage their tasks"
+ON public.tasks FOR ALL
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+-- 9. Storage : bucket "courses" (upload de PDF depuis Bibliothèque)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('courses', 'courses', false)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Users can upload their courses" ON storage.objects;
+CREATE POLICY "Users can upload their courses" ON storage.objects
+FOR INSERT WITH CHECK (bucket_id = 'courses' AND auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Users can view their courses" ON storage.objects;
+CREATE POLICY "Users can view their courses" ON storage.objects
+FOR SELECT USING (bucket_id = 'courses' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+DROP POLICY IF EXISTS "Users can delete their courses" ON storage.objects;
+CREATE POLICY "Users can delete their courses" ON storage.objects
+FOR DELETE USING (bucket_id = 'courses' AND (storage.foldername(name))[1] = auth.uid()::text);

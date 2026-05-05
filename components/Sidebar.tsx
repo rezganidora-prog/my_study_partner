@@ -10,11 +10,20 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
-  const [stats, setStats] = useState({ level: 5, xp: 1250, nextLevelXp: 2000 });
+  const [stats, setStats] = useState({ level: 1, xp: 0, nextLevelXp: 1000 });
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user);
+      if (user) {
+        supabase.from('profiles').select('level, xp').eq('id', user.id).single()
+          .then(({ data }) => {
+            if (data) {
+              const lvl = data.level || 1;
+              setStats({ level: lvl, xp: data.xp || 0, nextLevelXp: lvl * 1000 });
+            }
+          });
+      }
     });
   }, []);
 

@@ -3,6 +3,16 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput,
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 
+const CATEGORIES = [
+  { label: 'Mathématiques', icon: '🧮', color: '#E3F2FD' },
+  { label: 'Physique-Chimie', icon: '⚗️', color: '#FFF3E0' },
+  { label: 'Histoire-Géo', icon: '🌍', color: '#EFEBE9' },
+  { label: 'Informatique', icon: '💻', color: '#E0F2F1' },
+  { label: 'Langues', icon: '📖', color: '#F3E5F5' },
+  { label: 'SVT / Biologie', icon: '🌿', color: '#E8F5E9' },
+  { label: 'Autre', icon: '📌', color: '#FAFAFA' },
+];
+
 export default function TimelineScreen() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<number | null>(new Date().getDate());
@@ -13,6 +23,7 @@ export default function TimelineScreen() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [editingTask, setEditingTask] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('Mathématiques');
 
   useEffect(() => {
     fetchStats();
@@ -62,7 +73,7 @@ export default function TimelineScreen() {
         title: sessionTitle, 
         duration: parseInt(duration), 
         date: taskDate, 
-        category: 'Mathématiques'
+        category: selectedCategory
       });
       
       if (!error) {
@@ -97,6 +108,7 @@ export default function TimelineScreen() {
     setEditingTask(task);
     setSessionTitle(task.title);
     setDuration(task.duration.toString());
+    setSelectedCategory(task.category || 'Mathématiques');
     setShowAddModal(true);
   };
 
@@ -104,6 +116,7 @@ export default function TimelineScreen() {
     setSessionTitle('');
     setDuration('60');
     setEditingTask(null);
+    setSelectedCategory('Mathématiques');
     setShowAddModal(false);
   };
 
@@ -224,7 +237,26 @@ export default function TimelineScreen() {
                 value={sessionTitle} 
                 onChangeText={setSessionTitle} 
               />
-              <View style={styles.pickerFake}><Text style={styles.pickerText}>Mathématiques</Text><Ionicons name="chevron-down" size={16} color="#8B735B" /></View>
+              <Text style={styles.categoryLabel}>Matière :</Text>
+              <View style={styles.categoryGrid}>
+                {CATEGORIES.map((cat) => (
+                  <TouchableOpacity
+                    key={cat.label}
+                    style={[
+                      styles.categoryChip,
+                      { backgroundColor: selectedCategory === cat.label ? cat.color : '#fff' },
+                      selectedCategory === cat.label && styles.categoryChipActive,
+                    ]}
+                    onPress={() => setSelectedCategory(cat.label)}
+                  >
+                    <Text style={styles.categoryChipIcon}>{cat.icon}</Text>
+                    <Text style={[
+                      styles.categoryChipText,
+                      selectedCategory === cat.label && { color: '#4A3728', fontWeight: '700' }
+                    ]} numberOfLines={1}>{cat.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
               <View style={styles.durationRow}>
                 <Text style={styles.durationLabel}>Durée (minutes) :</Text>
                 <TextInput style={styles.durationInput} value={duration} onChangeText={setDuration} keyboardType="numeric" />
@@ -286,8 +318,12 @@ const styles = StyleSheet.create({
   closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' },
   formContent: { padding: 20 },
   textInput: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#8BAF76', borderRadius: 12, padding: 12, color: '#4A3728', marginBottom: 15 },
-  pickerFake: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#E8D9C0', borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
-  pickerText: { flex: 1, color: '#4A3728', fontSize: 14 },
+  categoryLabel: { fontSize: 12, fontWeight: 'bold', color: '#8B735B', textTransform: 'uppercase', marginBottom: 10 },
+  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 15 },
+  categoryChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 7, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1, borderColor: '#E8D9C0' },
+  categoryChipActive: { borderColor: '#8BAF76' },
+  categoryChipIcon: { fontSize: 13 },
+  categoryChipText: { fontSize: 11, color: '#8B735B', fontWeight: '500', maxWidth: 80 },
   durationRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 25 },
   durationLabel: { fontSize: 14, color: '#4A3728' },
   durationInput: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#E8D9C0', borderRadius: 10, padding: 8, width: 60, textAlign: 'center', fontWeight: 'bold' },

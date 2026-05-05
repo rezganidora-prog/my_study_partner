@@ -9,7 +9,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '@/lib/supabase';
-import { decode } from 'base64-arraybuffer';
+
 
 type Message = {
   id: string;
