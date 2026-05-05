@@ -70,7 +70,10 @@ export default function SocialScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [uploading, setUploading] = useState(false);
   const [loadingPartners, setLoadingPartners] = useState(true);
+  const [unreadMap, setUnreadMap] = useState<{ [roomId: string]: number }>({});
+  const [lastMsgMap, setLastMsgMap] = useState<{ [roomId: string]: string }>({});
   const scrollViewRef = useRef<ScrollView>(null);
+  const activeRoomRef = useRef<any>(null);
 
   useEffect(() => {
     initUser();
@@ -80,6 +83,44 @@ export default function SocialScreen() {
     const { data } = await supabase.auth.getUser();
     setUser(data.user);
     await fetchRealPartners(data.user?.id);
+  };
+
+  // Sync activeRoom to ref so subscription callback can read it
+  useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
+
+  // Global listener for unread messages
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel('global-unread')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          const msg = payload.new as any;
+          const roomId: string = msg.room_id;
+          // Only private rooms involving current user
+          if (!roomId.includes(user.id)) return;
+          // Ignore own messages
+          if (msg.user_id === user.id) return;
+          const cur = activeRoomRef.current;
+          const activeId = cur
+            ? (cur.type === 'user' ? getPrivateRoomId(user.id, cur.id) : cur.id)
+            : null;
+          if (activeId !== roomId) {
+            setUnreadMap(prev => ({ ...prev, [roomId]: (prev[roomId] || 0) + 1 }));
+            setLastMsgMap(prev => ({ ...prev, [roomId]: msg.content || '📷 Image' }));
+          }
+        }
+      ).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
+  const openRoom = (room: any) => {
+    setActiveRoom(room);
+    if (room.type === 'user') {
+      const roomId = getPrivateRoomId(user?.id, room.id);
+      setUnreadMap(prev => ({ ...prev, [roomId]: 0 }));
+    }
   };
 
   const getPrivateRoomId = (user1: string, user2: string) =>
@@ -272,7 +313,7 @@ export default function SocialScreen() {
             <TouchableOpacity
               key={name}
               style={styles.roomCardSmall}
-              onPress={() => setActiveRoom({ id: name, name, type: 'room' })}
+              onPress={() => openRoom({ id: name, name, type: 'room' })}
             >
               <Ionicons name="people" size={22} color="#8BAF76" />
               <Text style={styles.roomNameSmall}>{name}</Text>
@@ -287,7 +328,7 @@ export default function SocialScreen() {
             <TouchableOpacity
               key={p.id}
               style={[styles.partnerItem, styles.demoPartnerItem]}
-              onPress={() => setActiveRoom({ ...p, type: 'fictional' })}
+              onPress={() => openRoom({ ...p, type: 'fictional' })}
             >
               <Image source={{ uri: p.avatar_url }} style={styles.avatar} />
               <View style={{ flex: 1, marginLeft: 12 }}>
@@ -319,38 +360,41 @@ export default function SocialScreen() {
           </View>
         ) : (
           <View style={styles.partnersList}>
-            {filteredPartners.map((p) => (
-              <TouchableOpacity
-                key={p.id}
-                style={styles.partnerItem}
-                onPress={() =>
-                  setActiveRoom({
-                    id: p.id,
-                    name: p.full_name || p.username || 'Collègue',
-                    full_name: p.full_name,
-                    type: 'user',
-                  })
-                }
-              >
-                <Image
-                  source={{
-                    uri:
-                      p.avatar_url ||
-                      `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                        p.full_name || p.username || 'U'
-                      )}&background=8BAF76&color=fff`,
-                  }}
-                  style={styles.avatar}
-                />
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.partnerName}>
-                    {p.full_name || p.username || 'Collègue'}
-                  </Text>
-                  <Text style={styles.partnerStatus}>🟢 En ligne</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#C4A882" />
-              </TouchableOpacity>
-            ))}
+            {filteredPartners.map((p) => {
+              const roomId = getPrivateRoomId(user?.id, p.id);
+              const unread = unreadMap[roomId] || 0;
+              const lastMsg = lastMsgMap[roomId];
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[styles.partnerItem, unread > 0 && styles.partnerItemUnread]}
+                  onPress={() => openRoom({ id: p.id, name: p.full_name || p.username || 'Collègue', full_name: p.full_name, type: 'user' })}
+                >
+                  <View style={styles.avatarWrapper}>
+                    <Image
+                      source={{ uri: p.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name || p.username || 'U')}&background=8BAF76&color=fff` }}
+                      style={styles.avatar}
+                    />
+                    {unread > 0 && <View style={styles.onlineDot} />}
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={[styles.partnerName, unread > 0 && { color: '#4A3728', fontWeight: '800' }]}>
+                      {p.full_name || p.username || 'Collègue'}
+                    </Text>
+                    <Text style={[styles.partnerStatus, unread > 0 && { color: '#8BAF76', fontWeight: '600' }]} numberOfLines={1}>
+                      {lastMsg || 'Appuyer pour discuter →'}
+                    </Text>
+                  </View>
+                  {unread > 0 ? (
+                    <View style={styles.unreadBadge}>
+                      <Text style={styles.unreadBadgeText}>{unread}</Text>
+                    </View>
+                  ) : (
+                    <Ionicons name="chevron-forward" size={18} color="#C4A882" />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
       </ScrollView>
@@ -488,7 +532,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   demoBadgeText: { color: '#fff', fontSize: 9, fontWeight: 'bold', letterSpacing: 0.5 },
-  partnerStatus: { fontSize: 12, color: '#8BAF76', marginTop: 2 },
+  partnerStatus: { fontSize: 12, color: '#C4A882', marginTop: 2 },
+  partnerItemUnread: { backgroundColor: '#F1F8E9', borderColor: '#8BAF76' },
+  avatarWrapper: { position: 'relative' },
+  onlineDot: { position: 'absolute', bottom: 0, right: 0, width: 12, height: 12, borderRadius: 6, backgroundColor: '#8BAF76', borderWidth: 2, borderColor: '#fff' },
+  unreadBadge: { backgroundColor: '#D48C8C', minWidth: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4 },
+  unreadBadgeText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
   emptyState: {
     backgroundColor: '#fff', borderRadius: 16, padding: 25,
     alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#F0E6D2',

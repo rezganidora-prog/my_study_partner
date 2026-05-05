@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Platform, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Platform, Alert, ActivityIndicator, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '@/lib/supabase';
@@ -22,6 +22,11 @@ export default function CoursesScreen() {
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [courseTitle, setCourseTitle] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('Mathématiques');
+  // Edit state
+  const [editingCourse, setEditingCourse] = useState<any>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editSubject, setEditSubject] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchCourses();
@@ -95,6 +100,52 @@ export default function CoursesScreen() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const openEdit = (course: any) => {
+    setEditingCourse(course);
+    setEditTitle(course.title);
+    setEditSubject(course.subject || 'Mathématiques');
+  };
+
+  const handleEdit = async () => {
+    if (!editTitle.trim() || !editingCourse) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('courses')
+        .update({ title: editTitle.trim(), subject: editSubject })
+        .eq('id', editingCourse.id);
+      if (error) throw error;
+      setEditingCourse(null);
+      fetchCourses();
+    } catch (e: any) {
+      Alert.alert('Erreur', e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = (course: any) => {
+    Alert.alert(
+      'Supprimer ce cours ?',
+      `« ${course.title} » sera supprimé définitivement.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer', style: 'destructive',
+          onPress: async () => {
+            // Delete from storage if file_url exists
+            if (course.file_url) {
+              await supabase.storage.from('courses').remove([course.file_url]).catch(() => {});
+            }
+            const { error } = await supabase.from('courses').delete().eq('id', course.id);
+            if (!error) fetchCourses();
+            else Alert.alert('Erreur', error.message);
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -178,14 +229,69 @@ export default function CoursesScreen() {
       {/* Library Section */}
       <Text style={styles.libraryTitle}>Ma Bibliothèque ({courses.length})</Text>
       <View style={styles.libraryGrid}>
-        {courses.map((c, idx) => (
-          <View key={idx} style={styles.courseCard}>
-            <View style={styles.courseIconBox}><Ionicons name="journal" size={24} color="#8BAF76" /></View>
-            <Text style={styles.courseTitle} numberOfLines={1}>{c.title}</Text>
+        {courses.map((c) => (
+          <View key={c.id} style={styles.courseCard}>
+            <View style={styles.courseIconBox}>
+              <Ionicons name="journal" size={24} color="#8BAF76" />
+            </View>
+            <Text style={styles.courseTitle} numberOfLines={2}>{c.title}</Text>
             <Text style={styles.courseSub}>{c.subject}</Text>
+            <View style={styles.courseActions}>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => openEdit(c)}>
+                <Ionicons name="pencil-outline" size={16} color="#8BAF76" />
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => handleDelete(c)}>
+                <Ionicons name="trash-outline" size={16} color="#D48C8C" />
+              </TouchableOpacity>
+            </View>
           </View>
         ))}
       </View>
+
+      {/* Edit Modal */}
+      <Modal visible={!!editingCourse} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>✏️ Modifier le cours</Text>
+              <TouchableOpacity onPress={() => setEditingCourse(null)}>
+                <Ionicons name="close" size={22} color="#4A3728" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>Titre</Text>
+            <TextInput
+              style={styles.textInput}
+              value={editTitle}
+              onChangeText={setEditTitle}
+              placeholder="Titre du cours"
+              placeholderTextColor="#C4A882"
+            />
+
+            <Text style={styles.inputLabel}>Matière</Text>
+            <View style={styles.subjectGrid}>
+              {SUBJECTS.map((s) => (
+                <TouchableOpacity
+                  key={s.id}
+                  style={[
+                    styles.subjectBtn,
+                    { backgroundColor: editSubject === s.label ? s.color : '#fff' },
+                    editSubject === s.label && { borderColor: '#8BAF76' },
+                  ]}
+                  onPress={() => setEditSubject(s.label)}
+                >
+                  <Ionicons name={s.icon as any} size={14} color="#8B735B" />
+                  <Text style={styles.subjectBtnText}>{s.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity style={styles.saveBtn} onPress={handleEdit} disabled={saving}>
+              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Enregistrer</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -224,9 +330,17 @@ const styles = StyleSheet.create({
   disabledBtn: { backgroundColor: '#E8D9C0' },
 
   libraryTitle: { fontSize: 20, fontWeight: 'bold', color: '#4A3728', marginBottom: 15 },
-  libraryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  libraryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingBottom: 40 },
   courseCard: { width: '47%', backgroundColor: '#fff', borderRadius: 20, padding: 15, borderWidth: 1, borderColor: '#F0E6D2', alignItems: 'center' },
   courseIconBox: { width: 50, height: 50, borderRadius: 15, backgroundColor: '#FDF6E3', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
-  courseTitle: { fontSize: 14, fontWeight: 'bold', color: '#4A3728', textAlign: 'center' },
-  courseSub: { fontSize: 11, color: '#C4A882', marginTop: 4 },
+  courseTitle: { fontSize: 14, fontWeight: 'bold', color: '#4A3728', textAlign: 'center', marginBottom: 4 },
+  courseSub: { fontSize: 11, color: '#C4A882', marginBottom: 10 },
+  courseActions: { flexDirection: 'row', gap: 8 },
+  actionBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#F0F8EC', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#D4EDCB' },
+  deleteBtn: { backgroundColor: '#FFF0F0', borderColor: '#F5C6C6' },
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: '#FFFBF0', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#4A3728' },
 });
