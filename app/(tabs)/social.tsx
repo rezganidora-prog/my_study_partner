@@ -1,13 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, TextInput, Modal, KeyboardAvoidingView,
-  Platform, Alert, ActivityIndicator,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 const decodeBase64 = (base64: string) => {
   const binaryString = atob(base64);
@@ -27,7 +36,7 @@ const FICTIONAL_PARTNERS = [
       "Bonne question ! En maths, il faut comprendre le concept avant tout 💡",
       "Moi je révise toujours avec des fiches récapitulatives 📝",
       "On peut faire un quiz ensemble ! 🎯",
-      "Essaie les exercices du chapitre 3, ils sont vraiment bien 👍",
+      "Essaie les exercices du chapitre 3, ils sont vraiment bien ",
       "Tu veux qu'on fasse une session de révision ce soir ? 📚",
     ],
   },
@@ -134,7 +143,7 @@ export default function SocialScreen() {
       setMessages([{
         id: 'm1',
         username: partner?.username,
-        content: 'Salut ! On révise ensemble ? 👋',
+        content: 'Salut ! On révise ensemble ?',
         user_id: 'fictional',
       }]);
       return;
@@ -206,7 +215,7 @@ export default function SocialScreen() {
       setMessages((prev) => [...prev, myMsg]);
       setNewMessage('');
       setTimeout(() => {
-        const responses = partner?.responses ?? ['Super ! 👍'];
+        const responses = partner?.responses ?? ['Super !'];
         const response = responses[Math.floor(Math.random() * responses.length)];
         setMessages((prev) => [...prev, {
           id: (Date.now() + 1).toString(),

@@ -1,8 +1,8 @@
-import { Slot } from 'expo-router';
-import { View, StyleSheet, TouchableOpacity, Animated, Dimensions, Platform } from 'react-native';
-import { useState, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { Ionicons } from '@expo/vector-icons';
+import { Slot } from 'expo-router';
+import { useRef, useState } from 'react';
+import { Animated, Dimensions, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 const { width } = Dimensions.get('window');
 const isMobile = width < 768;
@@ -25,22 +25,22 @@ export default function TabLayout() {
     <View style={styles.container}>
       {/* Overlay pour fermer le menu sur mobile */}
       {isMobile && isMenuOpen && (
-        <TouchableOpacity 
-          style={styles.overlay} 
-          activeOpacity={1} 
-          onPress={toggleMenu} 
+        <TouchableOpacity
+          style={styles.overlay}
+          activeOpacity={1}
+          onPress={toggleMenu}
         />
       )}
 
       {/* Barre Latérale Animée */}
       <Animated.View style={[
-        styles.sidebarContainer, 
+        styles.sidebarContainer,
         { transform: [{ translateX: slideAnim }] },
         !isMobile && { position: 'relative', transform: [{ translateX: 0 }] }
       ]}>
         <Sidebar onClose={isMobile ? toggleMenu : undefined} />
       </Animated.View>
-      
+
       <View style={styles.content}>
         {/* Bouton Menu (uniquement sur mobile ou si menu fermé) */}
         {(isMobile || !isMenuOpen) && (
