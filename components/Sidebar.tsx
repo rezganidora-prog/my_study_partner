@@ -4,6 +4,7 @@ import { useRouter, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Shadows, Spacing } from '@/constants/GhibliTheme';
 import { supabase } from '@/lib/supabase';
+import { usePomodoro } from '@/context/PomodoroContext';
 import type { User } from '@supabase/supabase-js';
 
 export default function Sidebar({ onClose }: { onClose?: () => void }) {
@@ -11,6 +12,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [stats, setStats] = useState({ level: 1, xp: 0, nextLevelXp: 1000 });
+  const { mode, isActive: isPomoActive, timeLeft, formatTime, config } = usePomodoro();
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -75,6 +77,9 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
         <Text style={styles.sectionLabel}>Navigation</Text>
         {MENU_ITEMS.map((item) => {
           const isActive = pathname === item.path || (item.path === '/(tabs)' && pathname === '/');
+          const isPomoItem = item.name === 'Focus Pomodoro';
+          const showPomoBadge = isPomoItem && (isPomoActive || (timeLeft > 0 && timeLeft < config[mode].minutes * 60));
+
           return (
             <TouchableOpacity
               key={item.name}
@@ -91,6 +96,15 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
               <Text style={[styles.menuText, isActive && styles.activeMenuText]}>
                 {item.name}
               </Text>
+
+              {showPomoBadge && (
+                <View style={[styles.timerBadge, { backgroundColor: config[mode].color + '20' }]}>
+                  <Ionicons name={config[mode].icon as any} size={11} color={config[mode].color} style={{ marginRight: 3 }} />
+                  <Text style={[styles.timerBadgeText, { color: config[mode].color }]}>
+                    {formatTime(timeLeft)}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           );
         })}
@@ -259,5 +273,17 @@ const styles = StyleSheet.create({
     color: Colors.accent,
     fontWeight: '700',
     marginLeft: 12,
+  },
+  timerBadge: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  timerBadgeText: {
+    fontSize: 11,
+    fontWeight: 'bold',
   },
 });

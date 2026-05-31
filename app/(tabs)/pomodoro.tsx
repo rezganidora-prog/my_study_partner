@@ -1,82 +1,39 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Colors, Shadows, Spacing } from '@/constants/GhibliTheme';
 import { useRouter } from 'expo-router';
+import { usePomodoro, TimerMode } from '@/context/PomodoroContext';
 
 const { width } = Dimensions.get('window');
 const TIMER_SIZE = width * 0.75;
 
-type TimerMode = 'focus' | 'short' | 'long';
-
 export default function PomodoroScreen() {
   const router = useRouter();
-  const [mode, setMode] = useState<TimerMode>('focus');
-  const [isActive, setIsActive] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(25 * 60);
-  const [sessionsDone, setSessionsDone] = useState(0);
+  const {
+    mode,
+    isActive,
+    timeLeft,
+    sessionsDone,
+    toggleTimer,
+    resetTimer,
+    skipTimer,
+    switchMode,
+    formatTime,
+    config,
+  } = usePomodoro();
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressAnim = useRef(new Animated.Value(1)).current;
-
-  const config = {
-    focus: { label: 'Focus', minutes: 25, color: Colors.green, icon: 'leaf' },
-    short: { label: 'Pause', minutes: 5, color: Colors.info, icon: 'cafe' },
-    long: { label: 'Repos', minutes: 15, color: Colors.accent, icon: 'bed' },
-  };
-
-  useEffect(() => {
-    if (isActive && timeLeft > 0) {
-      timerRef.current = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
-      }, 1000);
-    } else if (timeLeft === 0) {
-      handleModeComplete();
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isActive, timeLeft]);
 
   useEffect(() => {
     const totalTime = config[mode].minutes * 60;
     Animated.timing(progressAnim, {
       toValue: timeLeft / totalTime,
-      duration: 1000,
+      duration: 500,
       useNativeDriver: false,
     }).start();
-  }, [timeLeft]);
-
-  const handleModeComplete = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setIsActive(false);
-    if (mode === 'focus') {
-      const nextSessions = sessionsDone + 1;
-      setSessionsDone(nextSessions);
-      switchMode(nextSessions % 4 === 0 ? 'long' : 'short');
-    } else {
-      switchMode('focus');
-    }
-  };
-
-  const switchMode = (newMode: TimerMode) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setMode(newMode);
-    setTimeLeft(config[newMode].minutes * 60);
-    setIsActive(false);
-  };
-
-  const toggleTimer = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsActive(!isActive);
-  };
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-  };
+  }, [timeLeft, mode]);
 
   return (
     <View style={styles.container}>
@@ -128,11 +85,7 @@ export default function PomodoroScreen() {
       <View style={styles.controls}>
         <TouchableOpacity
           style={styles.secondaryBtn}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setTimeLeft(config[mode].minutes * 60);
-            setIsActive(false);
-          }}
+          onPress={resetTimer}
         >
           <Ionicons name="refresh" size={24} color={Colors.brown} />
         </TouchableOpacity>
@@ -143,7 +96,7 @@ export default function PomodoroScreen() {
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.secondaryBtn} onPress={handleModeComplete}>
+        <TouchableOpacity style={styles.secondaryBtn} onPress={skipTimer}>
           <Ionicons name="play-skip-forward" size={24} color={Colors.brown} />
         </TouchableOpacity>
       </View>

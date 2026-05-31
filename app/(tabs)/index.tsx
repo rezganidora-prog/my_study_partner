@@ -340,6 +340,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
 
+  progressTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: Colors.brown,
+  },
+
+  progressPercent: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: Colors.green,
+  },
+
   progressBarBg: {
     height: 10,
     backgroundColor: Colors.beige,

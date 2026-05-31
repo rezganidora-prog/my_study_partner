@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar'
 import React, { useEffect, useState } from 'react'
 import { ActivityIndicator, View } from 'react-native'
 import { ThemeProvider } from '../context/ThemeContext'
+import { PomodoroProvider } from '../context/PomodoroContext'
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
@@ -62,12 +63,14 @@ export default function RootLayout() {
   }
   return (
     <ThemeProvider>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="splash-ayat" options={{ headerShown: false, animation: 'fade' }} />
-      </Stack>
+      <PomodoroProvider>
+        <StatusBar style="dark" />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="splash-ayat" options={{ headerShown: false, animation: 'fade' }} />
+        </Stack>
+      </PomodoroProvider>
     </ThemeProvider>
   )
 }
